@@ -39,7 +39,7 @@ class TrainingPipeline(Pipeline):
 
         training_config (Optional[BaseTrainerConfig]): An instance of
             :class:`~pythae.trainers.BaseTrainerConfig` stating the training
-            parameters. If None, a default configuration is used.
+            parameters. If None, a default configuration is used. Default: None.
     """
 
     def __init__(
@@ -85,7 +85,7 @@ class TrainingPipeline(Pipeline):
                 if not isinstance(training_config, AdversarialTrainerConfig):
 
                     raise AssertionError(
-                        "A 'AdversarialTrainer' "
+                        "An 'AdversarialTrainer' "
                         f"is expected for training a {model.model_name}"
                     )
 
@@ -132,10 +132,10 @@ class TrainingPipeline(Pipeline):
 
             eval_data (Optional[Union[~numpy.ndarray, ~torch.Tensor]]): The evaluation data as a
                 :class:`numpy.ndarray` or :class:`torch.Tensor` of shape (mini_batch x
-                n_channels x ...). If None, only uses train_fata for training. Default: None.
+                n_channels x ...). If None, only uses train_data for training. Default: None.
 
             callbacks (List[~pythae.trainers.training_callbacks.TrainingCallbacks]):
-                A list of callbacks to use during training.
+                A list of callbacks to use during training. Default: None.
         """
 
         logger.info("Preprocessing train data...")

@@ -100,11 +100,11 @@ class BaseAE(nn.Module):
         """Method to save the model at a specific location. It saves, the model weights as a
         ``models.pt`` file along with the model config as a ``model_config.json`` file. If the
         model to save used custom encoder (resp. decoder) provided by the user, these are also
-        saved as ``decoder.pkl`` (resp. ``decoder.pkl``).
+        saved as ``encoder.pkl`` (resp. ``decoder.pkl``).
 
         Args:
             dir_path (str): The path where the model should be saved. If the path
-                path does not exist a folder will be created at the provided location.
+                does not exist a folder will be created at the provided location.
         """
 
         model_path = dir_path
@@ -163,7 +163,7 @@ class BaseAE(nn.Module):
 
         except RuntimeError:
             RuntimeError(
-                "Enable to load model weights. Ensure they are saves in a '.pt' format."
+                "Enable to load model weights. Ensure they are saved in a '.pt' format."
             )
 
         if "model_state_dict" not in model_weights.keys():

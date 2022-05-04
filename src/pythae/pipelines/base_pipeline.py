@@ -4,6 +4,6 @@ class Pipeline:
 
     def __call__(self):
         """
-        The method run the Pipeline process and must be implemented in a child class
+        This method runs the Pipeline process and must be implemented in a child class
         """
         raise NotImplementedError()

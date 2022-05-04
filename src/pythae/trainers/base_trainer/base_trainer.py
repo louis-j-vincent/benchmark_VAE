@@ -74,7 +74,7 @@ class BaseTrainer:
         if not os.path.exists(training_config.output_dir):
             os.makedirs(training_config.output_dir)
             logger.info(
-                f"Created {training_config.output_dir} folder since did not exist.\n"
+                f"Created {training_config.output_dir} folder since it did not exist.\n"
             )
 
         self.training_config = training_config
@@ -185,7 +185,7 @@ class BaseTrainer:
                 " - Wrong model architecture -> check encoder, decoder and metric architecture if "
                 "you provide yours \n"
                 " - The data input dimension provided is wrong -> when no encoder, decoder or metric "
-                "provided, a network is built automatically but requires the shape of the flatten "
+                "provided, a network is built automatically but requires the shape of the flattened "
                 "input data.\n"
                 f"Exception raised: {type(e)} with message: " + str(e)
             ) from e
@@ -267,7 +267,7 @@ class BaseTrainer:
             # if dir does not exist create it
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
-                logger.info(f"Created {log_dir} folder since did not exists.")
+                logger.info(f"Created {log_dir} folder since it did not exist.")
                 logger.info("Training logs will be recodered here.\n")
                 logger.info(" -> Training can be monitored here.\n")
 
