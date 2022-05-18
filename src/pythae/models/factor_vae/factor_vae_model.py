@@ -153,7 +153,7 @@ class FactorVAE(VAE):
 
         KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=-1)
 
-        z_permuted = self._permute_dims(z)  # .clone().detach().requires_grad_(True)
+        z_permuted = self._permute_dims(z)
 
         latent_adversarial_score = self.discriminator(z).embedding.flatten()
         permuted_latent_adversarial_score = self.discriminator(
@@ -163,13 +163,17 @@ class FactorVAE(VAE):
         true_labels = torch.ones(N, requires_grad=False).to(z.device)
         fake_labels = torch.zeros(N, requires_grad=False).to(z.device)
 
-        TC = F.binary_cross_entropy(
-            latent_adversarial_score, fake_labels
-        ) + F.binary_cross_entropy(permuted_latent_adversarial_score, true_labels)
+        TC_ae = F.binary_cross_entropy(
+            latent_adversarial_score, true_labels
+            ) - F.binary_cross_entropy(latent_adversarial_score, fake_labels)
 
-        autoencoder_loss = recon_loss + KLD - self.gamma * TC
+        autoencoder_loss = recon_loss + KLD - self.gamma * TC_ae
 
-        discriminator_loss = 0.5 * TC
+        TC_discriminator = F.binary_cross_entropy(
+            latent_adversarial_score, true_labels
+            ) + F.binary_cross_entropy(permuted_latent_adversarial_score, fake_labels)
+
+        discriminator_loss = 0.5 * TC_discriminator
 
         return (
             (recon_loss).mean(dim=0),

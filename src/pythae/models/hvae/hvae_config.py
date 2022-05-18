@@ -9,7 +9,7 @@ class HVAEConfig(VAEConfig):
 
     Parameters:
         latent_dim (int): The latent dimension used for the latent space. Default: 10
-        n_lf (int): The number of leapfrog steps to used in the integrator: Default: 3
+        n_lf (int): The number of leapfrog steps to be used in the integrator: Default: 3
         eps_lf (int): The leapfrog stepsize. Default: 1e-3
         beta_zero (int): The tempering factor in the Riemannian Hamiltonian Monte Carlo Sampler.
             Default: 0.3
