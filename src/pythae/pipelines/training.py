@@ -3,9 +3,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 import torch
-from torch.optim import Optimizer
 
-from ..customexception import LoadError
 from ..data.preprocessors import DataProcessor
 from ..models import VAE, BaseAE, VAEConfig
 from ..trainers import *
@@ -140,19 +138,27 @@ class TrainingPipeline(Pipeline):
                 A list of callbacks to use during training.
         """
 
+        if self.model is None:
+            self._set_default_model(train_data)
+
+        dataset_type = (
+            "DoubleBatchDataset"
+            if self.model.model_name == "FactorVAE"
+            else "BaseDataset"
+        )
+
         logger.info("Preprocessing train data...")
         train_data = self.data_processor.process_data(train_data)
         if train_label is not None:
             train_label = self.data_processor.process_data(train_label)
             train_dataset = self.data_processor.to_dataset(train_data,train_label)
         else:
-            train_dataset = self.data_processor.to_dataset(train_data)
+            train_dataset = self.data_processor.to_dataset(
+            train_data, dataset_type=dataset_type
+        )
         
 
         self.train_data = train_data
-
-        if self.model is None:
-            self._set_default_model(train_data)
 
         if eval_data is not None:
             logger.info("Preprocessing eval data...\n")
@@ -161,7 +167,9 @@ class TrainingPipeline(Pipeline):
                 eval_label = self.data_processor.process_data(eval_label)
                 eval_dataset = self.data_processor.to_dataset(eval_data,eval_label)
             else:
-                eval_dataset = self.data_processor.to_dataset(eval_data)
+                eval_dataset = self.data_processor.to_dataset(
+                eval_data, dataset_type=dataset_type
+            )
 
         else:
             eval_dataset = None

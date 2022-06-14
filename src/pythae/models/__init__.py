@@ -16,12 +16,11 @@ and named likewise the model. The following modules can be found in this folder:
 
 from .adversarial_ae import Adversarial_AE, Adversarial_AE_Config
 from .ae import AE, AEConfig
-from .vae import VAE, VAEConfig
+from .auto_model import AutoModel
 from .base import BaseAE, BaseAEConfig
 from .beta_tc_vae import BetaTCVAE, BetaTCVAEConfig
 from .beta_vae import BetaVAE, BetaVAEConfig
-from .disentangled_beta_vae import (DisentangledBetaVAE,
-                                    DisentangledBetaVAEConfig)
+from .disentangled_beta_vae import DisentangledBetaVAE, DisentangledBetaVAEConfig
 from .factor_vae import FactorVAE, FactorVAEConfig
 from .hvae import HVAE, HVAEConfig
 from .info_vae import INFOVAE_MMD, INFOVAE_MMD_Config
@@ -42,6 +41,7 @@ from .em_ae import EMAE, EMAE_Config
 
 
 __all__ = [
+    "AutoModel",
     "BaseAE",
     "BaseAEConfig",
     "AE",
