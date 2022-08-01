@@ -60,6 +60,7 @@ class AE(BaseAE):
             self.model_config.uses_default_encoder = False
 
         self.set_encoder(encoder)
+        self.p = 0 #p for the bernoulli encoding the number of missing values
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
@@ -73,7 +74,14 @@ class AE(BaseAE):
 
         x = inputs["data"]
 
-        z = self.encoder(x).embedding
+        if self.p>0:
+            # set some values to nan
+            U = tensor(binomial(n=1,p=self.p,size=x.shape))
+            xU = x.detach().clone()
+            xU[U==1] = -10
+            z = self.encoder(xU).embedding
+        else:
+            z = self.encoder(x).embedding
         recon_x = self.decoder(z)["reconstruction"]
 
         loss = self.loss_function(recon_x, x)
