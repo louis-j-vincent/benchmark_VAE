@@ -75,7 +75,7 @@ class AE(BaseAE):
         """
 
         x = inputs["data"]
-        u = (x==-10)
+        u = (x!=-10)
 
         if self.p>0:
             # set some values to nan
