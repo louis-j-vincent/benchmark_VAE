@@ -75,6 +75,7 @@ class AE(BaseAE):
         """
 
         x = inputs["data"]
+        u = (x==-10)
 
         if self.p>0:
             # set some values to nan
@@ -86,7 +87,7 @@ class AE(BaseAE):
             z = self.encoder(x).embedding
         recon_x = self.decoder(z)["reconstruction"]
 
-        loss = self.loss_function(recon_x, x)
+        loss = self.loss_function(recon_x[u], x[u])
 
         output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
 
