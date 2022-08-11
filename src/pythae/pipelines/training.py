@@ -120,28 +120,31 @@ class TrainingPipeline(Pipeline):
         self,
         train_data: Union[np.ndarray, torch.Tensor],
         eval_data: Union[np.ndarray, torch.Tensor] = None,
-        callbacks: List[TrainingCallback] = None,
+        train_data_alpha: Union[np.ndarray, torch.Tensor] = None,
+        eval_data_alpha: Union[np.ndarray, torch.Tensor] = None,
+        log_output_dir: str = None,
     ):
         """
         Launch the model training on the provided data.
 
         Args:
-            training_data (Union[~numpy.ndarray, ~torch.Tensor]): The training data as a
-                :class:`numpy.ndarray` or :class:`torch.Tensor` of shape (mini_batch x
+            training_data (Union[~numpy.ndarray, ~torch.Tensor]): The training data as a 
+                :class:`numpy.ndarray` or :class:`torch.Tensor` of shape (mini_batch x 
                 n_channels x ...)
 
-            eval_data (Optional[Union[~numpy.ndarray, ~torch.Tensor]]): The evaluation data as a
-                :class:`numpy.ndarray` or :class:`torch.Tensor` of shape (mini_batch x
+            eval_data (Optional[Union[~numpy.ndarray, ~torch.Tensor]]): The evaluation data as a 
+                :class:`numpy.ndarray` or :class:`torch.Tensor` of shape (mini_batch x 
                 n_channels x ...). If None, only uses train_fata for training. Default: None.
-
-            callbacks (List[~pythae.trainers.training_callbacks.TrainingCallbacks]):
-                A list of callbacks to use during training.
         """
 
         logger.info("Preprocessing train data...")
         train_data = self.data_processor.process_data(train_data)
-        train_dataset = self.data_processor.to_dataset(train_data)
 
+        if train_data_alpha is not None:
+            train_data_alpha = self.data_processor.process_data(train_data_alpha)
+            train_dataset = self.data_processor.to_dataset(train_data,train_data_alpha)
+        else:
+            train_dataset = self.data_processor.to_dataset(train_data)
         self.train_data = train_data
 
         if self.model is None:
@@ -150,51 +153,24 @@ class TrainingPipeline(Pipeline):
         if eval_data is not None:
             logger.info("Preprocessing eval data...\n")
             eval_data = self.data_processor.process_data(eval_data)
-            eval_dataset = self.data_processor.to_dataset(eval_data)
-
+            if eval_data_alpha is not None:
+                eval_data_alpha = self.data_processor.process_data(eval_data_alpha)
+                eval_dataset = self.data_processor.to_dataset(eval_data,eval_data_alpha)
+            else:
+                eval_dataset = self.data_processor.to_dataset(eval_data)
         else:
             eval_dataset = None
 
-        if isinstance(self.training_config, CoupledOptimizerTrainerConfig):
-            logger.info("Using Coupled Optimizer Trainer\n")
-            trainer = CoupledOptimizerTrainer(
-                model=self.model,
-                train_dataset=train_dataset,
-                eval_dataset=eval_dataset,
-                training_config=self.training_config,
-                callbacks=callbacks,
-            )
 
-        elif isinstance(self.training_config, AdversarialTrainerConfig):
-            logger.info("Using Adversarial Trainer\n")
-            trainer = AdversarialTrainer(
-                model=self.model,
-                train_dataset=train_dataset,
-                eval_dataset=eval_dataset,
-                training_config=self.training_config,
-                callbacks=callbacks,
-            )
-
-        elif isinstance(self.training_config, CoupledOptimizerAdversarialTrainerConfig):
-            logger.info("Using Coupled Optimizer Adversarial Trainer\n")
-            trainer = CoupledOptimizerAdversarialTrainer(
-                model=self.model,
-                train_dataset=train_dataset,
-                eval_dataset=eval_dataset,
-                training_config=self.training_config,
-                callbacks=callbacks,
-            )
-
-        elif isinstance(self.training_config, BaseTrainerConfig):
+        if isinstance(self.training_config, BaseTrainingConfig):
             logger.info("Using Base Trainer\n")
             trainer = BaseTrainer(
                 model=self.model,
                 train_dataset=train_dataset,
                 eval_dataset=eval_dataset,
-                training_config=self.training_config,
-                callbacks=callbacks,
+                training_config=self.training_config
             )
 
         self.trainer = trainer
 
-        trainer.train()
+        trainer.train(log_output_dir=log_output_dir)
