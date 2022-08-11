@@ -10,8 +10,6 @@ from ..base.base_utils import ModelOutput
 
 from .base_architectures import BaseDecoder, BaseDiscriminator, BaseEncoder, BaseMetric
 
-#__all__ = ["BaseDecoder", "BaseEncoder", "BaseMetric", "BaseDiscriminator"]
-
 import torch
 import numpy as np
 import torch.nn as nn
@@ -90,5 +88,8 @@ class Decoder_AE_missing(BaseDecoder):
     def forward(self, z: torch.Tensor):
         h1 = self.fc(z).reshape(z.shape[0], 1024)
         output = ModelOutput(reconstruction=self.deconv_layers(h1))
+        
+__all__ = ["BaseDecoder", "BaseEncoder", "BaseMetric", "BaseDiscriminator",
+          "Encoder_VAE_Z_alpha","Encoder_VAE_missing","Decoder_AE_missing"]
 
         return output
