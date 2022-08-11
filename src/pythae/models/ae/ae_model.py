@@ -88,6 +88,11 @@ class AE(BaseAE):
         recon_x = self.decoder(z)["reconstruction"]
 
         loss = self.loss_function(recon_x[u], x[u])
+        
+        if (inputs['labels']==1.).float().mean()!=1.:
+            x_alpha = inputs["labels"]
+            z_alpha = self.encoder.encoder_alpha(x_alpha).embedding
+            loss += 0.1*self.loss_function(z,z_alpha) + exp(-self.loss_function(z_alpha,z_alpha*0.))
 
         output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
 
