@@ -162,7 +162,7 @@ class TrainingPipeline(Pipeline):
             eval_dataset = None
 
 
-        if isinstance(self.training_config, BaseTrainingConfig):
+        if isinstance(self.training_config, BaseTrainerConfig):
             logger.info("Using Base Trainer\n")
             trainer = BaseTrainer(
                 model=self.model,
