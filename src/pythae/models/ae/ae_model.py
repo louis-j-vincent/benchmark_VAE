@@ -9,7 +9,7 @@ from ..base.base_utils import ModelOutput
 from ..nn import BaseDecoder, BaseEncoder
 from ..nn.default_architectures import Encoder_AE_MLP
 from .ae_config import AEConfig
-from torch import tensor
+from torch import tensor, exp
 from numpy.random import binomial
 
 
