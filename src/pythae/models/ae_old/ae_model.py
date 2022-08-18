@@ -1,25 +1,27 @@
-import os
-from typing import Optional
-
-import torch.nn.functional as F
-
-from ...data.datasets import BaseDataset
 from ..base import BaseAE
+from .ae_config import AEConfig
+from ...data.datasets import BaseDataset
 from ..base.base_utils import ModelOutput
+
 from ..nn import BaseDecoder, BaseEncoder
 from ..nn.default_architectures import Encoder_AE_MLP
-from .ae_config import AEConfig
-from torch import tensor, cat, exp, std
-import torch
+
+from typing import Optional
+from torch import exp
+
+import torch.nn.functional as F
+import os
+
+from torch import tensor
 from numpy.random import binomial
 
 
 class AE(BaseAE):
     """Vanilla Autoencoder model.
-
+    
     Args:
-        model_config (AEConfig): The Autoencoder configuration setting the main parameters of the
-            model.
+        model_config(AEConfig): The Autoencoder configuration seting the main parameters of the
+            model
 
         encoder (BaseEncoder): An instance of BaseEncoder (inheriting from `torch.nn.Module` which
             plays the role of encoder. This argument allows you to use your own neural networks
@@ -65,38 +67,36 @@ class AE(BaseAE):
         self.set_encoder(encoder)
         self.p = 0 #p for the bernoulli encoding the number of missing values
 
-    def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
+    def forward(self, inputs: BaseDataset) -> ModelOutput:
         """The input data is encoded and decoded
-
+        
         Args:
             inputs (BaseDataset): An instance of pythae's datasets
-
+            
         Returns:
             ModelOutput: An instance of ModelOutput containing all the relevant parameters
         """
 
         x = inputs["data"]
         u = (x!=-10)
-        xU = x.detach().clone()
 
         if self.p>0:
             # set some values to nan
             U = tensor(binomial(n=1,p=self.p,size=x.shape))
+            xU = x.detach().clone()
             xU[U==1] = -10
-        
-        z = self.encoder(xU).embedding
+            z = self.encoder(xU).embedding
+        else:
+            z = self.encoder(x).embedding
+        recon_x = self.decoder(z)["reconstruction"]
 
-        is_x_alpha = (inputs['labels']==1.).float().mean()!=1.
-        if is_x_alpha:
+        loss = self.loss_function(recon_x[u], x[u])
+
+        if (inputs['labels']==1.).float().mean()!=1.:
             x_alpha = inputs["labels"]
             z_alpha = self.encoder.encoder_alpha(x_alpha).embedding
-            z = cat((z,z_alpha),axis=1)
-            z = self.encoder.merging_net(z)
-
-        recon_x = self.decoder(z)["reconstruction"]
+            loss += 0.1*self.loss_function(z,z_alpha) + exp(-self.loss_function(z_alpha,z_alpha*0.))
         
-        loss = self.loss_function(recon_x[u], x[u]) + exp(-std(z))
-
         output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
 
         return output
@@ -104,7 +104,7 @@ class AE(BaseAE):
     def loss_function(self, recon_x, x):
 
         MSE = F.mse_loss(
-            recon_x.reshape(x.shape[0], -1), x.reshape(x.shape[0], -1), reduction="none"
+            recon_x.reshape(x.shape[0], -1), x.reshape(x.shape[0], -1),reduction="none"
         ).sum(dim=-1)
         return MSE.mean(dim=0)
 
@@ -122,3 +122,40 @@ class AE(BaseAE):
         model_config = AEConfig.from_json_file(path_to_model_config)
 
         return model_config
+
+    @classmethod
+    def load_from_folder(cls, dir_path):
+        """Class method to be used to load the model from a specific folder
+
+        Args:
+            dir_path (str): The path where the model should have been be saved.
+
+        .. note::
+            This function requires the folder to contain:
+                a ``model_config.json`` and a ``model.pt`` if no custom architectures were
+                provided
+
+                or
+                a ``model_config.json``, a ``model.pt`` and a ``encoder.pkl`` (resp.
+                ``decoder.pkl``) if a custom encoder (resp. decoder) was provided
+        """
+
+        model_config = cls._load_model_config_from_folder(dir_path)
+        model_weights = cls._load_model_weights_from_folder(dir_path)
+
+        if not model_config.uses_default_encoder:
+            encoder = cls._load_custom_encoder_from_folder(dir_path)
+
+        else:
+            encoder = None
+
+        if not model_config.uses_default_decoder:
+            decoder = cls._load_custom_decoder_from_folder(dir_path)
+
+        else:
+            decoder = None
+
+        model = cls(model_config, encoder=encoder, decoder=decoder)
+        model.load_state_dict(model_weights)
+
+        return model
