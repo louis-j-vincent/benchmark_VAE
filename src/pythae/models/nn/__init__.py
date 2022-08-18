@@ -61,6 +61,11 @@ class Encoder_VAE_missing(BaseEncoder):
         self.log_var = nn.Linear(1024, args.latent_dim)
 
         self.encoder_alpha = Encoder_VAE_Z_alpha(args)
+        self.merging_net = nn.Sequential(
+            nn.Linear(self.latent_dim * 2, self.latent_dim*10),
+            nn.ReLU(),
+            nn.Linear(self.latent_dim * 10, self.latent_dim)
+        )
 
     def forward(self, x: torch.Tensor):
         u = (x!=-10)
