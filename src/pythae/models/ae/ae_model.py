@@ -299,8 +299,126 @@ class AE_Z_alpha2(BaseAE):
         loss = self.loss_function(recon_x[u], x[u]) 
         
         if is_x_alpha:
-            loss += exp(-self.loss_function(z_alpha,z_alpha*0.)) + 0.1*self.loss_function(z_alpha,z_eps)
-            loss = self.loss_function(z_alpha,z_eps)
+            loss += self.loss_function(z_alpha,z_eps) #exp(-self.loss_function(z_alpha,z_alpha*0.)) + 0.1*
+            #loss = self.loss_function(z_alpha,z_eps)
+
+        output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
+
+        return output
+
+    def loss_function(self, recon_x, x):
+
+        MSE = F.mse_loss(
+            recon_x.reshape(x.shape[0], -1), x.reshape(x.shape[0], -1), reduction="none"
+        ).sum(dim=-1)
+        return MSE.mean(dim=0)
+
+    @classmethod
+    def _load_model_config_from_folder(cls, dir_path):
+        file_list = os.listdir(dir_path)
+
+        if "model_config.json" not in file_list:
+            raise FileNotFoundError(
+                f"Missing model config file ('model_config.json') in"
+                f"{dir_path}... Cannot perform model building."
+            )
+
+        path_to_model_config = os.path.join(dir_path, "model_config.json")
+        model_config = AEConfig.from_json_file(path_to_model_config)
+
+        return model_config
+
+class AE_multi_U(BaseAE):
+    """Vanilla Autoencoder model.
+
+    Args:
+        model_config (AEConfig): The Autoencoder configuration setting the main parameters of the
+            model.
+
+        encoder (BaseEncoder): An instance of BaseEncoder (inheriting from `torch.nn.Module` which
+            plays the role of encoder. This argument allows you to use your own neural networks
+            architectures if desired. If None is provided, a simple Multi Layer Preception
+            (https://en.wikipedia.org/wiki/Multilayer_perceptron) is used. Default: None.
+
+        decoder (BaseDecoder): An instance of BaseDecoder (inheriting from `torch.nn.Module` which
+            plays the role of decoder. This argument allows you to use your own neural networks
+            architectures if desired. If None is provided, a simple Multi Layer Preception
+            (https://en.wikipedia.org/wiki/Multilayer_perceptron) is used. Default: None.
+
+    .. note::
+        For high dimensional data we advice you to provide you own network architectures. With the
+        provided MLP you may end up with a ``MemoryError``.
+    """
+
+    def __init__(
+        self,
+        model_config: AEConfig,
+        encoder: Optional[BaseEncoder] = None,
+        decoder: Optional[BaseDecoder] = None,
+    ):
+
+        BaseAE.__init__(self, model_config=model_config, decoder=decoder)
+
+        self.model_name = "AE_multi_U"
+
+        if encoder is None:
+            if model_config.input_dim is None:
+                raise AttributeError(
+                    "No input dimension provided !"
+                    "'input_dim' parameter of BaseAEConfig instance must be set to 'data_shape' where "
+                    "the shape of the data is (C, H, W ..). Unable to build encoder "
+                    "automatically"
+                )
+
+            encoder = Encoder_AE_MLP(model_config)
+            self.model_config.uses_default_encoder = True
+
+        else:
+            self.model_config.uses_default_encoder = False
+
+        self.set_encoder(encoder)
+        self.p = 0 #p for the bernoulli encoding the number of missing values
+        self.nU = 100
+
+    def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
+        """The input data is encoded and decoded
+
+        Args:
+            inputs (BaseDataset): An instance of pythae's datasets
+
+        Returns:
+            ModelOutput: An instance of ModelOutput containing all the relevant parameters
+        """
+
+        x = inputs["data"]
+        u = (x!=-10)
+        nU = self.nU if self.training else 1
+
+        z = self.encoder(x).embedding
+        recon_x = self.decoder(z)["reconstruction"]
+        loss = self.loss_function(recon_x[u], x[u]) 
+
+        
+
+        if self.p>0:
+            #for i in range(self.nU):
+            #    xU = x.detach().clone()
+            #    U = tensor(binomial(n=1,p=self.p,size=(x.shape)))
+            #    xU[U==1] = -10
+            #    z_eps = self.encoder(xU).embedding
+            #    recon_x = self.decoder(z)["reconstruction"]
+            #    loss += (self.loss_function(recon_x[u], x[u]) + self.loss_function(z,z_eps))/self.nU
+
+            x_repeat = torch.repeat_interleave(x,nU,dim=0)
+            z_repeat = torch.repeat_interleave(z,nU,dim=0)
+            u_repeat = torch.repeat_interleave(u,nU,dim=0)
+            xU = x_repeat.detach().clone()
+            U = tensor(binomial(n=1,p=self.p,size=xU.shape))
+            xU[U==1] = -10
+            z_eps = self.encoder(xU).embedding
+            recon_x = self.decoder(z_eps)["reconstruction"]
+
+            loss += self.loss_function(recon_x[u_repeat], x_repeat[u_repeat]) + self.loss_function(z_repeat,z_eps)
 
         output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
 
