@@ -300,6 +300,7 @@ class AE_Z_alpha2(BaseAE):
         
         if is_x_alpha:
             loss += exp(-self.loss_function(z_alpha,z_alpha*0.)) + 0.1*self.loss_function(z_alpha,z_eps)
+            loss = self.loss_function(z_alpha,z_eps)
 
         output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
 
