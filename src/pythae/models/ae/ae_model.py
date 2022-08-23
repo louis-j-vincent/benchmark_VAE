@@ -388,37 +388,46 @@ class AE_multi_U(BaseAE):
 
         Returns:
             ModelOutput: An instance of ModelOutput containing all the relevant parameters
+            - nU is the number of time we wish to makes copies of x and apply a different U
+            When self.p>0, we repeat nU times x and apply a different u everytime
+
         """
 
         x = inputs["data"]
         u = (x!=-10)
-        nU = self.nU if self.training else 1
-
-        z = self.encoder(x).embedding
-        recon_x = self.decoder(z)["reconstruction"]
-        loss = self.loss_function(recon_x[u], x[u]) 
-
-        
+        nU = self.nU if self.training else 3
+        z = self.encoder(x).embedding 
 
         if self.p>0:
-            #for i in range(self.nU):
-            #    xU = x.detach().clone()
-            #    U = tensor(binomial(n=1,p=self.p,size=(x.shape)))
-            #    xU[U==1] = -10
-            #    z_eps = self.encoder(xU).embedding
-            #    recon_x = self.decoder(z)["reconstruction"]
-            #    loss += (self.loss_function(recon_x[u], x[u]) + self.loss_function(z,z_eps))/self.nU
-
-            x_repeat = torch.repeat_interleave(x,nU,dim=0)
-            z_repeat = torch.repeat_interleave(z,nU,dim=0)
-            u_repeat = torch.repeat_interleave(u,nU,dim=0)
-            xU = x_repeat.detach().clone()
+            x_repeat, z_repeat, u_repeat = x.repeat((nU,1)), z.repeat((nU,1)), u.repeat((nU,1)) #repeat nU times
+            #set xU as nU repeats of x with each time a different U applied
+            xU = x_repeat.detach().clone() 
             U = tensor(binomial(n=1,p=self.p,size=xU.shape))
             xU[U==1] = -10
-            z_eps = self.encoder(xU).embedding
-            recon_x = self.decoder(z_eps)["reconstruction"]
 
-            loss += self.loss_function(recon_x[u_repeat], x_repeat[u_repeat]) + self.loss_function(z_repeat,z_eps)
+            zU = self.encoder(xU).embedding #encoding of xU
+
+        #if SNDS-like data, get z_alpha the equivalent of zU for SNDS-like data
+        is_x_alpha = (inputs['labels']==1.).float().mean()!=1.
+        if is_x_alpha:
+            x_alpha = inputs["labels"]
+            z_alpha = self.encoder.encoder_alpha(x_alpha)#.embedding
+            z_alpha = z_alpha.repeat((nU,1))
+
+        #Concatenate zU and z_alpha to get information from both for Z
+        if self.is_merging_net:
+            z = cat((zU,z_alpha),axis=1)
+            z = self.encoder.merging_net(z)
+        else:
+            z = zU
+
+        recon_x = self.decoder(z)["reconstruction"]
+        loss = self.loss_function(recon_x[u_repeat], x_repeat[u_repeat])
+        
+        if is_x_alpha:
+            loss += self.loss_function(z_alpha,zU) 
+        else:
+            loss += self.loss_function(z_repeat,zU) # + exp(-self.loss_function(z,z*0.))
 
         output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
 
