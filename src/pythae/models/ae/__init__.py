@@ -13,6 +13,6 @@ Available samplers
 """
 
 from .ae_config import AEConfig
-from .ae_model import AE, AE_Z_alpha, AE_Z_alpha2, AE_multi_U
+from .ae_model import AE, AE_Z_alpha, AE_Z_alpha2, AE_multi_U, vAE
 
-__all__ = ["AE","AE_Z_alpha","AE_Z_alpha2","AE_multi_U","AEConfig"]
+__all__ = ["AE","AE_Z_alpha","AE_Z_alpha2","AE_multi_U","vAE","AEConfig"]

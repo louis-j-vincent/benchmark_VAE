@@ -132,4 +132,4 @@ class Decoder_AE(BaseDecoder):
         return output
             
 __all__ = ["BaseDecoder", "BaseEncoder", "BaseMetric", "BaseDiscriminator",
-          "Encoder_VAE_Z_alpha","Encoder_VAE_missing","Encoder_VAE_Z_alpha","Decoder_AE"]
+          "Encoder_VAE_Z_alpha","Encoder_VAE_missing","Encoder_VAE_Z_alpha","Decoder_AE",'Encoder_vAE']
