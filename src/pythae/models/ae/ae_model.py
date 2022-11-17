@@ -12,6 +12,7 @@ from .ae_config import AEConfig
 from torch import tensor, cat, exp, std
 import torch
 from numpy.random import binomial
+import numpy as np
 
 
 class AE_multi_U(BaseAE):
@@ -216,6 +217,27 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
         return xU, x_nU, u_nU
 
+    def corrupt_data(self,data):
+
+        square_size = data.shape[-1]
+        center_coord = np.random.randint(0,square_size,(2,data.shape[0]))
+        square_size = np.repeat(np.random.randint(0,square_size//2,data.shape[0]).reshape(1,-1),2,axis=0)
+        upper_left_coord = np.minimum(np.maximum(center_coord - (square_size//2),0),square_size)
+        for i in range(data.shape[0]):
+            data[i,:,upper_left_coord[0,i]:upper_left_coord[0,i]+square_size[0,i],upper_left_coord[1,i]:upper_left_coord[1,i]+square_size[1,i]] = -10
+        return data
+
+    def add_missing_values_2d(self, x, u, nU):
+        """
+        Adds missing values as squares on the images
+        expands x nU times, adds missing values folllowing a new mask U for each of the nU repeats
+        """
+        x_nU, u_nU = x.repeat_interleave(nU,dim=0), u.repeat_interleave(nU,dim=0)
+        #set xU as nU repeat of x with a different U applied each time
+        xU = self.corrupt_data(x_nU.detach().clone())
+
+        return xU, x_nU, u_nU
+
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
 
@@ -235,7 +257,7 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
         z = self.encoder(x).embedding 
 
         if self.p>0:
-            xU, x_repeat, u_repeat = self.add_missing_values(x, u, nU)
+            xU, x_repeat, u_repeat = self.add_missing_values_2d(x, u, nU)
             z_out = self.encoder(xU) #encoding of xU
             zU_mu = z_out.embedding
             #zU_sigma = z_out.log_covariance
