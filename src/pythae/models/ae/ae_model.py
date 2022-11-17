@@ -203,6 +203,7 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
         self.p = 0.1 #p for the bernoulli encoding the number of missing values
         self.nU = 10
         self.init_loss = True
+        self.beta = 1
 
     def add_missing_values(self, x, u, nU):
         """
@@ -271,7 +272,7 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
         else:
             reg_loss = self.loss_log_proba(z_anchor, zU_mu, zU_sigma)
 
-        loss = recon_loss + 0.1*reg_loss
+        loss = recon_loss + self.beta**reg_loss
 
         output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
 
