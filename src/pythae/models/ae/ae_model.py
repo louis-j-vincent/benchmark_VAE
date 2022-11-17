@@ -210,7 +210,7 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
         x_nU, u_nU = x.repeat_interleave(nU,dim=0), u.repeat_interleave(nU,dim=0)
         #set xU as nU repeat of x with a different U applied each time
         xU = x_nU.detach().clone()
-        binomial_probas = (u_nU)*self.p #we want to delete each feat with proba self.ps
+        binomial_probas = (u_nU).detach().numpy()*self.p #we want to delete each feat with proba self.ps
         U = tensor(binomial(n=1,p=binomial_probas,size=xU.shape))
         xU[U==1] = -10
 
