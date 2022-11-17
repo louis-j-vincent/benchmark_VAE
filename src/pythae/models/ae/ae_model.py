@@ -181,7 +181,7 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
         BaseAE.__init__(self, model_config=model_config, decoder=decoder)
 
-        self.model_name = "AE_multi_U"
+        self.model_name = "vAE"
 
         if encoder is None:
             if model_config.input_dim is None:
@@ -207,7 +207,7 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
         """
         expands x nU times, adds missing values folllowing a new mask U for each of the nU repeats
         """
-        x_nU, u_nU = x.repeat((nU,1)), u.repeat((nU,1))
+        x_nU, u_nU = x.repeat_interleave(nU,dim=0), u.repeat_interleave(nU,dim=0)
         #set xU as nU repeat of x with a different U applied each time
         xU = x_nU.detach().clone()
         binomial_probas = (u_nU)*self.p #we want to delete each feat with proba self.ps
@@ -237,7 +237,8 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
         if self.p>0:
             xU, x_repeat, u_repeat = self.add_missing_values(x, u, nU)
             z_out = self.encoder(xU) #encoding of xU
-            zU_mu, zU_sigma = z_out.embedding, z_out.log_covariance
+            zU_mu = z_out.embedding
+            #zU_sigma = z_out.log_covariance
 
         z_anchor = z.repeat((nU,1))
         recon_x = self.decoder(zU_mu)["reconstruction"]
