@@ -261,7 +261,7 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
             xU, x_repeat, u_repeat = self.add_missing_values_2d(x, u, nU)
             z_out = self.encoder(xU) #encoding of xU
             zU_mu = z_out.embedding
-            zU_sigma = z_out.log_var
+            zU_sigma = torch.exp(z_out.log_covariance)
 
         z_anchor = z.repeat((nU,1))
         recon_x = self.decoder(zU_mu)["reconstruction"]
