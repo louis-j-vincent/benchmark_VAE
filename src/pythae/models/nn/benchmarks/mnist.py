@@ -157,10 +157,11 @@ class Encoder_vAE_MNIST(BaseEncoder):
             if output_layer_levels is not None:
                 if i + 1 in output_layer_levels:
                     output[f"embedding_layer_{i+1}"] = out
+
             if i + 1 == self.depth:
                 output["embedding"] = self.embedding(out.reshape(x.shape[0], -1))
+                output["log_covariance"] = self.log_var(out.reshape(x.shape[0], -1))
 
-        return output
 
 
 class Encoder_AE_MNIST(BaseEncoder):
