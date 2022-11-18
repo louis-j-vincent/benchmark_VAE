@@ -261,7 +261,7 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
             xU, x_repeat, u_repeat = self.add_missing_values_2d(x, u, nU)
             z_out = self.encoder(xU) #encoding of xU
             zU_mu = z_out.embedding
-            #zU_sigma = z_out.log_covariance
+            zU_sigma = z_out.log_var
 
         z_anchor = z.repeat((nU,1))
         recon_x = self.decoder(zU_mu)["reconstruction"]
@@ -272,7 +272,7 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
         else:
             reg_loss = self.loss_log_proba(z_anchor, zU_mu, zU_sigma)
 
-        loss = recon_loss + self.beta**reg_loss
+        loss = recon_loss + self.beta*reg_loss #j'avais mis une puissance ??
 
         output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
 
@@ -282,7 +282,8 @@ class vAE(BaseAE): #equivalent of AE_multi_U_w_variance
         sigma = torch.abs(sigma)
         eps = torch.tensor(1e-5)
         loss_mu = ( (x-mu)**2 / (sigma + eps) ).sum(axis=1).mean(axis=0)
-        loss_sigma = torch.maximum(torch.tensor(0), torch.log(sogma.mean(axis=1) + eps)).mean(axis=0)
+        #loss_sigma = torch.maximum(torch.tensor(0), torch.log(sogma.mean(axis=1) + eps)).mean(axis=0)
+        loss_sigma = torch.abs(sigma.mean() - 1)
         loss = loss_mu + loss_sigma
         return loss
 
