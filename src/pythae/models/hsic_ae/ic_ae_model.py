@@ -88,6 +88,7 @@ class IC_AE(BaseAE):
         return output
 
     def HSIC(self, K, L, H):
+        "The empirical HSIC"
 
         HSIC = torch.trace(torch.mm(K,torch.mm(H,torch.mm(L,H))))
         return HSIC
