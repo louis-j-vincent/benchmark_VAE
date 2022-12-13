@@ -371,7 +371,7 @@ class AE(BaseAE):
         """
 
         recon_x = inputs["data"]
-        for i in range(n):
+        for i in range(self.n):
             x = recon_x
             z = self.encoder(x).embedding
             recon_x = self.decoder(z)["reconstruction"]
