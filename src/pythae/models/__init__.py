@@ -39,6 +39,8 @@ from .vamp import VAMP, VAMPConfig
 from .vq_vae import VQVAE, VQVAEConfig
 from .wae_mmd import WAE_MMD, WAE_MMD_Config
 from .hsic_ae import IC_AE, IC_AEConfig
+from .hsic_vae import IC_VAE, IC_VAEConfig
+
 
 __all__ = [
     "BaseAE",
@@ -89,5 +91,7 @@ __all__ = [
     "VAE_LinNF_Config",
     "VAE_IAF",
     "VAE_IAF_Config",
-    "IC_AE", "IC_AEConfig"
+    "IC_AE", "IC_AEConfig",
+    "IC_VAE", "IC_VAEConfig"
+
 ]
