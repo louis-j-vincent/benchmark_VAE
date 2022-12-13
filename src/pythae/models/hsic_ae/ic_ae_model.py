@@ -77,13 +77,16 @@ class IC_AE(BaseAE):
             ModelOutput: An instance of ModelOutput containing all the relevant parameters
         """
 
-        x = inputs["data"]
-        n = x.shape[0]
-        z = self.encoder(x).embedding
-        recon_x = self.decoder(z)["reconstruction"]
+        x_in = inputs["data"]
+        recon_x = x_in
+        n = recon_x.shape[0]
+        for i in range(self.n):
+            x = recon_x
+            z = self.encoder(x).embedding
+            recon_x = self.decoder(z)["reconstruction"]
         self.loss_function(x, recon_x)
         if self.beta > 0:
-            K, L = torch.cov(z.reshape(n,-1)), torch.cov((recon_x - x).reshape(n,-1))
+            K, L = torch.cov(z.reshape(n,-1)), torch.cov((recon_x - x_in).reshape(n,-1))
             H = torch.eye(n).to(self.device) - 1/n
             loss += self.beta*self.HSIC(K,L,H)
 
