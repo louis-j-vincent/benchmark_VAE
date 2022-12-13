@@ -341,6 +341,7 @@ class AE(BaseAE):
         BaseAE.__init__(self, model_config=model_config, decoder=decoder)
 
         self.model_name = "AE"
+        self.n = 1
 
         if encoder is None:
             if model_config.input_dim is None:
@@ -369,9 +370,12 @@ class AE(BaseAE):
             ModelOutput: An instance of ModelOutput containing all the relevant parameters
         """
 
-        x = inputs["data"]
-        z = self.encoder(x).embedding
-        recon_x = self.decoder(z)["reconstruction"]
+        recon_x = inputs["data"]
+        for i in range(n):
+            x = recon_x
+            z = self.encoder(x).embedding
+            recon_x = self.decoder(z)["reconstruction"]
+            
         loss = self.loss_function(recon_x,x)
 
         output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
