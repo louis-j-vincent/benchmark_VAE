@@ -47,6 +47,7 @@ class IC_AE(BaseAE):
         BaseAE.__init__(self, model_config=model_config, decoder=decoder)
 
         self.model_name = "AE"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         if encoder is None:
             if model_config.input_dim is None:
@@ -80,7 +81,7 @@ class IC_AE(BaseAE):
         z = self.encoder(x).embedding
         recon_x = self.decoder(z)["reconstruction"]
         K, L = torch.cov(z.reshape(n,-1)), torch.cov((recon_x - x).reshape(n,-1))
-        H = torch.eye(n).to(device) - 1/n
+        H = torch.eye(n).to(self.device) - 1/n
         loss = self.HSIC(K,L,H) + self.loss_function(x, recon_x)
 
         output = ModelOutput(loss=loss, recon_x=recon_x, z=z)
