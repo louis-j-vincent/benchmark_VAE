@@ -105,7 +105,7 @@ class IC_AE(BaseAE):
 
         MSE = F.mse_loss(
             recon_x.reshape(x.shape[0], -1), x.reshape(x.shape[0], -1), reduction="none"
-        ).sum(dim=-1)
+        ).mean(dim=-1)
         return MSE.mean(dim=0)
 
     @classmethod
