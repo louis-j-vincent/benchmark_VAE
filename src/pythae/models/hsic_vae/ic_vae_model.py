@@ -47,6 +47,7 @@ class IC_VAE(BaseAE):
         self.model_name = "IC_VAE"
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.beta = 1
+        self.gamma = 1
 
         if encoder is None:
             if model_config.input_dim is None:
@@ -91,6 +92,8 @@ class IC_VAE(BaseAE):
         if self.beta > 0:
             hsic_loss = self.HSIC(z, x, recon_x)
             loss += hsic_loss
+        if self.gamma > 0:
+            loss += self.gamma/(std.mean() + 0.000001)
 
         output = ModelOutput(
             reconstruction_loss=recon_loss,
