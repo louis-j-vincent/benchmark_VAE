@@ -8,7 +8,7 @@ from ..base import BaseAE
 from ..base.base_utils import ModelOutput
 from ..nn import BaseDecoder, BaseEncoder
 from ..nn.default_architectures import Encoder_AE_MLP
-from .t_ae_config import AEConfig
+from .t_ae_config import t_AEConfig
 from torch import tensor, cat, exp, std
 import torch
 from numpy.random import binomial
@@ -38,7 +38,7 @@ class t_AE(BaseAE):
 
     def __init__(
         self,
-        model_config: AEConfig,
+        model_config: t_AEConfig,
         encoder: Optional[BaseEncoder] = None,
         decoder: Optional[BaseDecoder] = None,
     ):
@@ -77,6 +77,8 @@ class t_AE(BaseAE):
         """
 
         recon_x = inputs["data"]
+        N = recon_x.shape[-1]
+        recon_x = recon_x.reshape(-1,1,N,N)
         for i in range(self.n):
             x = recon_x
             z = self.encoder(x).embedding
@@ -89,7 +91,7 @@ class t_AE(BaseAE):
         return output
 
     def time_loss(self, z):
-        return F.l1_loss(z[1:] - z[:-1]).reshape(z.shape[0]-1, -1).sum(dim=-1).mean(dim=0)
+        return F.l1_loss(z[1:], z[:-1], reduction = "none").reshape(z.shape[0]-1, -1).sum(dim=-1).mean(dim=0)
 
     def loss_function(self, recon_x, x):
 
