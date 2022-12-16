@@ -315,12 +315,6 @@ class BaseTrainer:
             epoch_train_loss = self.train_step(epoch)
             metrics["train_epoch_loss"] = epoch_train_loss
 
-            if self.model.update_parameters is not None:
-                self.model.update_parameters()
-
-            if self.model.temperature is not None:
-                self.model.temperature = epoch/(self.training_config.num_epochs + 1)
-
             if self.eval_dataset is not None:
                 epoch_eval_loss = self.eval_step(epoch)
                 metrics["eval_epoch_loss"] = epoch_eval_loss
@@ -385,6 +379,12 @@ class BaseTrainer:
             self.callback_handler.on_log(
                 self.training_config, metrics, logger=logger, global_step=epoch
             )
+
+            if self.model.update_parameters is not None:
+                self.model.update_parameters()
+
+            if self.model.temperature is not None:
+                self.model.temperature = epoch/(self.training_config.num_epochs + 1)
 
         final_dir = os.path.join(training_dir, "final_model")
 
