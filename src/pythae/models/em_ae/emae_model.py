@@ -43,10 +43,12 @@ class EMAE(AE):
         AE.__init__(self, model_config=model_config, encoder=encoder, decoder=decoder)
 
         self.model_name = "EMAE"
+        self.beta = 1
+        self.temperature = 0
         self.Zs = None
         self.K = 10 #nb of Gaussians
         self.mu = torch.rand((self.K,model_config.latent_dim))
-        self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,model_config.latent_dim,model_config.latent_dim)
+        self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1)
         self.alpha = torch.ones(self.K)/self.K #p probabilities for each gaussian 
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
@@ -69,10 +71,10 @@ class EMAE(AE):
         recon_x = self.decoder(z)["reconstruction"]
 
         loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
-
-        log_likelihood_loss = self.log_likelihood(z,self.mu,self.Sigma,self.alpha)
-
-        loss += log_likelihood_loss
+        self.temperature = min(0.2,self.temperature)
+        if self.beta*self.temperature > 0:
+            log_likelihood_loss = torch.exp(self.log_likelihood(z,self.mu,self.Sigma,self.alpha))
+            loss += self.beta*self.temperature*log_likelihood_loss
 
         output = ModelOutput(
             loss=loss,
@@ -86,7 +88,7 @@ class EMAE(AE):
 
     def log_likelihood(self, X, mu, Sigma, alpha):
         Y = (X[:,None,:]-mu[None,:,:])
-        self.Lambda = torch.inverse(Sigma)
+        self.Lambda = torch.linalg.inv(Sigma)
         log = torch.einsum("ikp, kpq, ikq -> ik", Y, self.Lambda, Y)
         N_prob = torch.exp(-log/2) / (2*torch.pi*torch.sqrt(torch.det(Sigma)))
         prob = (N_prob * alpha).sum(axis=1)

@@ -318,6 +318,9 @@ class BaseTrainer:
             if self.model.update_parameters is not None:
                 self.model.update_parameters()
 
+            if self.model.temperature is not None:
+                self.model.temperature = epoch/(self.training_config.num_epochs + 1)
+
             if self.eval_dataset is not None:
                 epoch_eval_loss = self.eval_step(epoch)
                 metrics["eval_epoch_loss"] = epoch_eval_loss
