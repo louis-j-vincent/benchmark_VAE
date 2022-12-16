@@ -43,7 +43,7 @@ class EMAE(AE):
         AE.__init__(self, model_config=model_config, encoder=encoder, decoder=decoder)
 
         self.model_name = "EMAE"
-        self.Zs = torch.empty()
+        self.Zs = None
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
@@ -58,7 +58,10 @@ class EMAE(AE):
         x = inputs["data"]
 
         z = self.encoder(x).embedding
-        self.Zs = torch.cat((torch.Zs, z),0)
+        if torch.Zs is None:
+            torch.Zs = z
+        else:
+            self.Zs = torch.cat((torch.Zs, z),0)
         recon_x = self.decoder(z)["reconstruction"]
 
         loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
@@ -102,7 +105,7 @@ class EMAE(AE):
         self.Sigma = 1e-4 * torch.eye(d)[None,:,:] + torch.einsum("ikp, ikq, ik -> kpq", Y, Y, tau) / (tau.sum(axis=0)[:,None,None] + 1e-5)
         self.alpha = tau.mean(axis=0)
         self.alpha /= alpha.sum() # Regularize result
-        self.Z = torch.empty()
+        self.Z = None
 
     def loss_function(self, recon_x, x, z):
 
