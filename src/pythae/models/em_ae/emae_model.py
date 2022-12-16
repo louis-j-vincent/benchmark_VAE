@@ -45,9 +45,9 @@ class EMAE(AE):
         self.model_name = "EMAE"
         self.Zs = None
         self.K = 10 #nb of Gaussians
-        self.mu = torch.zeros((K,model_config.latent_dim))
-        self.Sigma = torch.zeros((K,model_config.latent_dim,model_config.latent_dim))
-        self.alpha = torch.ones(K)/K
+        self.mu = torch.zeros((self.K,model_config.latent_dim))
+        self.Sigma = torch.zeros((self.K,model_config.latent_dim,model_config.latent_dim))
+        self.alpha = torch.ones(self.K)/self.K #p probabilities for each gaussian 
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
