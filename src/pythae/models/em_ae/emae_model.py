@@ -45,7 +45,7 @@ class EMAE(AE):
         self.model_name = "EMAE"
         self.beta = 1
         self.temperature = 0
-        self.Zs = None
+        self.Z = None
         self.K = 10 #nb of Gaussians
         self.mu = torch.rand((self.K,model_config.latent_dim))
         self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1)
@@ -64,10 +64,10 @@ class EMAE(AE):
         x = inputs["data"]
 
         z = self.encoder(x).embedding
-        if self.Zs is None:
-            self.Zs = z
+        if self.Z is None:
+            self.Z = z
         else:
-            self.Zs = torch.cat((self.Zs, z),0)
+            self.Z = torch.cat((self.Z, z),0)
         recon_x = self.decoder(z)["reconstruction"]
 
         loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
