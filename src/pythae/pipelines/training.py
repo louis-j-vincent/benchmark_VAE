@@ -139,12 +139,14 @@ class TrainingPipeline(Pipeline):
 
         logger.info("Preprocessing train data...")
         train_data = self.data_processor.process_data(train_data)
+        print('Processor processed data')
 
         if train_data_alpha is not None:
             train_data_alpha = self.data_processor.process_data(train_data_alpha)
             train_dataset = self.data_processor.to_dataset(train_data,train_data_alpha)
         else:
             train_dataset = self.data_processor.to_dataset(train_data)
+        print('Processor ade to dataset')
         self.train_data = train_data
 
         if self.model is None:

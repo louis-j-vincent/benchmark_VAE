@@ -91,7 +91,7 @@ class IC_VAE(BaseAE):
         loss = recon_loss
         if self.beta > 0:
             hsic_loss = self.HSIC(z, x, recon_x)
-            loss += hsic_loss
+            loss += self.beta*hsic_loss
         if self.gamma > 0:
             loss += self.gamma/(std.mean() + 0.000001)
 

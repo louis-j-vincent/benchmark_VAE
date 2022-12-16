@@ -230,7 +230,7 @@ class Encoder_AE_MNIST(BaseEncoder):
     def __init__(self, args: BaseAEConfig):
         BaseEncoder.__init__(self)
 
-        self.input_dim = (1, 28, 28)
+        self.input_dim = args.input_dim
         self.latent_dim = args.latent_dim
         self.n_channels = 1
 
