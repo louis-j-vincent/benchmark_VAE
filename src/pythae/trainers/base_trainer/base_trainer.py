@@ -315,6 +315,9 @@ class BaseTrainer:
             epoch_train_loss = self.train_step(epoch)
             metrics["train_epoch_loss"] = epoch_train_loss
 
+            if self.model.update_parameters is not None:
+                self.model.update_parameters()
+
             if self.eval_dataset is not None:
                 epoch_eval_loss = self.eval_step(epoch)
                 metrics["eval_epoch_loss"] = epoch_eval_loss
