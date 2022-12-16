@@ -49,6 +49,7 @@ class EMAE(AE):
         self.K = 10 #nb of Gaussians
         self.mu = torch.rand((self.K,model_config.latent_dim))
         self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1)
+        self.Lambda = self.Sigma.clone()
         self.alpha = torch.ones(self.K)/self.K #p probabilities for each gaussian 
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
@@ -94,23 +95,31 @@ class EMAE(AE):
         prob = (N_prob * alpha).sum(axis=1)
         return torch.log(prob).sum()
 
+    def detach_parameters(self):
+        #Z = torch.zeros(self.Z.shape)
+        #Z[:] = self.Z[:].clone().deepcopy()
+        #self.Z = Z
+        self.Z = self.Z.detach().clone()
+        self.mu = self.mu.detach()
+        self.Sigma = self.Sigma.detach()
+        self.alpha = self.alpha.detach()
+
     def update_parameters(self):
-        Y = (self.Z[:,None,:]-self.mu[None,:,:])
-        log = torch.einsum("ikp, kpq, ikq -> ik", Y, self.Lambda, Y)
-        logdet = torch.logdet(self.Sigma)
+        Y = (self.Z[:,None,:]-self.mu[None,:,:]).detach()
+        log = torch.einsum("ikp, kpq, ikq -> ik", Y, self.Lambda, Y).detach()
+        logdet = torch.logdet(self.Sigma).detach()
         #_, logdet = np.linalg.slogdet(Sigma)
-        N_log_prob = -log/2 - torch.log(2*torch.pi)/2 - logdet/2
-        log_tau = torch.log(alpha+1e-5)+N_log_prob
+        N_log_prob = -log/2 - torch.log(2*torch.tensor(torch.pi))/2 - logdet/2
+        log_tau = torch.log(self.alpha+1e-5)+N_log_prob
         log_tau = log_tau - torch.logsumexp(log_tau, axis=1)[:,None]
         tau = torch.exp(log_tau)
-        
 
         # M-step
-        self.mu = torch.einsum("ik, ip -> kp", tau, self.Z) / (tau.sum(axis=0)[:,None] + 1e-5)
-        Y = (self.Z[:,None,:]-mu[None,:,:])
-        self.Sigma = 1e-4 * torch.eye(d)[None,:,:] + torch.einsum("ikp, ikq, ik -> kpq", Y, Y, tau) / (tau.sum(axis=0)[:,None,None] + 1e-5)
-        self.alpha = tau.mean(axis=0)
-        self.alpha /= alpha.sum() # Regularize result
+        self.mu = (torch.einsum("ik, ip -> kp", tau, self.Z) / (tau.sum(axis=0)[:,None] + 1e-5)).detach()
+        Y = (self.Z[:,None,:]-self.mu[None,:,:])
+        self.Sigma = (1e-4 * torch.eye(self.Z.shape[-1])[None,:,:] + torch.einsum("ikp, ikq, ik -> kpq", Y, Y, tau) / (tau.sum(axis=0)[:,None,None] + 1e-5)).detach()
+        self.alpha = tau.mean(axis=0).detach()
+        self.alpha /= self.alpha.sum() # Regularize result
         self.Z = None
 
     def loss_function(self, recon_x, x, z):
