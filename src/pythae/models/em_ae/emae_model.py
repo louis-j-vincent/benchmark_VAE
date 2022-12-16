@@ -51,6 +51,7 @@ class EMAE(AE):
         self.mu = torch.rand((self.K,model_config.latent_dim)).to(device)
         self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1).to(device)
         self.Lambda = self.Sigma.clone().to(device)
+        self.device = device
         self.alpha = (torch.ones(self.K)/self.K).to(device) #p probabilities for each gaussian 
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
@@ -118,7 +119,7 @@ class EMAE(AE):
         # M-step
         self.mu = (torch.einsum("ik, ip -> kp", tau, self.Z) / (tau.sum(axis=0)[:,None] + 1e-5)).detach()
         Y = (self.Z[:,None,:]-self.mu[None,:,:])
-        self.Sigma = (1e-4 * torch.eye(self.Z.shape[-1])[None,:,:] + torch.einsum("ikp, ikq, ik -> kpq", Y, Y, tau) / (tau.sum(axis=0)[:,None,None] + 1e-5)).detach()
+        self.Sigma = (1e-4 * torch.eye(self.Z.shape[-1])[None,:,:].to(self.device) + torch.einsum("ikp, ikq, ik -> kpq", Y, Y, tau) / (tau.sum(axis=0)[:,None,None] + 1e-5)).detach()
         self.alpha = tau.mean(axis=0).detach()
         self.alpha /= self.alpha.sum() # Regularize result
         self.Z = None
