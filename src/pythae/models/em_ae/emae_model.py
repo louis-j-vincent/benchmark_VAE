@@ -95,7 +95,7 @@ class EMAE(AE):
         return torch.log(prob).sum()
 
     def update_parameters(self):
-        Y = (self.Z[:,None,:]-mu[None,:,:])
+        Y = (self.Z[:,None,:]-self.mu[None,:,:])
         log = torch.einsum("ikp, kpq, ikq -> ik", Y, self.Lambda, Y)
         logdet = torch.logdet(self.Sigma)
         #_, logdet = np.linalg.slogdet(Sigma)
