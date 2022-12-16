@@ -99,4 +99,6 @@ __all__ = [
     "MIWAEConfig",
     "PIWAE",
     "PIWAEConfig",
+    "EMAE", 
+    "EMAE_Config"
 ]
