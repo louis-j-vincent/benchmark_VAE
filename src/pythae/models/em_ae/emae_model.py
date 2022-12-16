@@ -47,10 +47,11 @@ class EMAE(AE):
         self.temperature = 0
         self.Z = None
         self.K = 10 #nb of Gaussians
-        self.mu = torch.rand((self.K,model_config.latent_dim))
-        self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1)
-        self.Lambda = self.Sigma.clone()
-        self.alpha = torch.ones(self.K)/self.K #p probabilities for each gaussian 
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.mu = torch.rand((self.K,model_config.latent_dim)).to(device)
+        self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1).to(device)
+        self.Lambda = self.Sigma.clone().to(device)
+        self.alpha = (torch.ones(self.K)/self.K).to(device) #p probabilities for each gaussian 
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
