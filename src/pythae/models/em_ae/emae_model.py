@@ -58,8 +58,8 @@ class EMAE(AE):
         x = inputs["data"]
 
         z = self.encoder(x).embedding
-        if torch.Zs is None:
-            torch.Zs = z
+        if self.Zs is None:
+            self.Zs = z
         else:
             self.Zs = torch.cat((torch.Zs, z),0)
         recon_x = self.decoder(z)["reconstruction"]
