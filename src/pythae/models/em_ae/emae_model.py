@@ -74,7 +74,7 @@ class EMAE(AE):
         self.temperature = min(0.2,self.temperature)
         if self.beta*self.temperature > 0:
             log_likelihood_loss = torch.exp(self.log_likelihood(z,self.mu,self.Sigma,self.alpha))
-            loss += self.beta*self.temperature*log_likelihood_loss
+            loss += -self.beta*self.temperature*log_likelihood_loss
 
         output = ModelOutput(
             loss=loss,
@@ -87,7 +87,7 @@ class EMAE(AE):
         return output
 
     def log_likelihood(self, X, mu, Sigma, alpha):
-        Y = (X[:,None,:]-mu[None,:,:])
+        Y = (X[:,None,:]-self.mu[None,:,:])
         self.Lambda = torch.linalg.inv(Sigma)
         log = torch.einsum("ikp, kpq, ikq -> ik", Y, self.Lambda, Y)
         N_prob = torch.exp(-log/2) / (2*torch.pi*torch.sqrt(torch.det(Sigma)))
