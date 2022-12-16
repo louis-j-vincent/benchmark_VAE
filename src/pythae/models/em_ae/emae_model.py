@@ -40,13 +40,13 @@ class EMAE(AE):
         decoder: Optional[BaseDecoder] = None,
     ):
 
-        EMAE.__init__(self, model_config=model_config, encoder=encoder, decoder=decoder)
+        AE.__init__(self, model_config=model_config, encoder=encoder, decoder=decoder)
 
         self.model_name = "EMAE"
         self.Zs = None
         self.K = 10 #nb of Gaussians
-        self.mu = torch.zeros((self.K,model_config.latent_dim))
-        self.Sigma = torch.zeros((self.K,model_config.latent_dim,model_config.latent_dim))
+        self.mu = torch.rand((self.K,model_config.latent_dim))
+        self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,model_config.latent_dim,model_config.latent_dim)
         self.alpha = torch.ones(self.K)/self.K #p probabilities for each gaussian 
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
