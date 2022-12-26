@@ -77,7 +77,7 @@ class EMAE(AE):
         """
 
         x = inputs["data"]
-        y = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K).float()
+        y = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K).float().to(self.device)
 
         z = self.encoder(x).embedding
         if self.variationnal:
