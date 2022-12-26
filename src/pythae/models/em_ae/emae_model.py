@@ -110,6 +110,7 @@ class EMAE(AE):
             print(recon_loss, embedding_loss, LLloss,loss)
         else:
             loss = recon_loss
+            LLloss = recon_loss
         self.recon_loss, self.ll_loss = recon_loss, LLloss
         #min_max_loss = self.min_max_loss(z,y)
         #loss += min_max_loss
