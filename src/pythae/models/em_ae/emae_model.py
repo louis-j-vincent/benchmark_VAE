@@ -60,7 +60,7 @@ class EMAE(AE):
             self.mu[k,k] = 1.
         self.init = True
         self.Sigma = torch.ones(self.mu.shape).to(device)
-        self.quantile = 1
+        self.quantile = torch.tensor(1)
         #self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1).to(device)
         self.device = device
         self.alpha = (torch.ones(self.K)/self.K).to(device) #p probabilities for each gaussian 
@@ -77,14 +77,19 @@ class EMAE(AE):
             ModelOutput: An instance of ModelOutput containing all the relevant parameters
         """
 
+        torch.autograd.set_detect_anomaly(True)
+
         x = inputs["data"]
         y = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K).float().to(self.device)
 
         z = self.encoder(x).embedding
         if self.variationnal:
-            sigma_small = (y@self.Sigma**0.5)*torch.abs((self.quantile + torch.abs(y@self.mu))/(1.96 + torch.abs(z)))
-            sigma_small_max = torch.maximum(torch.ones(sigma_small.shape).to(self.device)*0.001, sigma_small)
-            z += torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
+            ratio = (self.quantile + torch.abs(y@self.mu))/(1.96 + torch.abs(z))
+            sigma_small_max = torch.maximum((y@self.Sigma**0.5)*ratio,torch.tensor(0.001))
+            #sigma_small_max = torch.maximum(torch.ones(sigma_small.shape).to(self.device)*0.001, sigma_small)
+            z_var = z + torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
+        else:
+            z_var = z
 
         if self.Z is None:
             self.Z = z
@@ -92,7 +97,7 @@ class EMAE(AE):
         else:
             self.Z = torch.cat((self.Z, z),0)
             self.labels = torch.cat((self.labels, y),0)
-        recon_x = self.decoder(z)["reconstruction"]
+        recon_x = self.decoder(z_var)["reconstruction"]
 
         loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
 
