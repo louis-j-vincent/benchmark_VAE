@@ -61,7 +61,6 @@ class EMAE(AE):
         self.init = True
         self.Sigma = torch.ones(self.mu.shape).to(device)
         #self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1).to(device)
-        self.Lambda = self.Sigma.clone().to(device)
         self.device = device
         self.alpha = (torch.ones(self.K)/self.K).to(device) #p probabilities for each gaussian 
         self.hist = {'mu':self.mu, 'Sigma':self.Sigma}
@@ -83,7 +82,7 @@ class EMAE(AE):
         z = self.encoder(x).embedding
         if self.variationnal:
             sigma_small = y@self.Sigma*torch.abs((1.96 + y@self.mu)/(1.96 + z))
-            z += torch.normal(torch.zeros(z.shape),sigma_small)
+            z += torch.normal(torch.zeros(z.shape),sigma_small).to(device)
 
         if self.Z is None:
             self.Z = z
