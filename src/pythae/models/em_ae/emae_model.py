@@ -66,6 +66,7 @@ class EMAE(AE):
         self.alpha = (torch.ones(self.K)/self.K).to(device) #p probabilities for each gaussian 
         self.hist = {'mu':self.mu, 'Sigma':self.Sigma}
         self.plot = False
+        self.recon_loss, self.ll_loss = None, None
         self.temp_start = 0
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
@@ -101,11 +102,7 @@ class EMAE(AE):
         recon_x = self.decoder(z_var)["reconstruction"]
 
         loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
-
-        #self.update_parameters(z)
     
-        #self.temperature = min(0.2,self.temperature)
-        #self.temperature = 0.01
         if self.beta>0 and self.temperature > self.temp_start:
             LLloss, sep_loss = self.likelihood_loss(z,y)
             sep_loss = 0
@@ -113,6 +110,7 @@ class EMAE(AE):
             print(recon_loss, embedding_loss, LLloss,loss)
         else:
             loss = recon_loss
+        self.recon_loss, self.ll_loss = recon_loss, LLloss
         #min_max_loss = self.min_max_loss(z,y)
         #loss += min_max_loss
 
@@ -193,6 +191,9 @@ class EMAE(AE):
             tau_sum = tau[:,:,None].sum(axis=0).detach()
             self.mu = (tau[:,:,None]*Z[:,None,:]).sum(axis=0).detach()/tau_sum
             self.Sigma = (tau[:,:,None] * (Z[:,None,:]-self.mu[None,:,:])**2).sum(axis=0).detach()/tau_sum
+        ratio = self.recon_loss/self.ll_loss
+        self.beta += self.epoch**(-0.5) * torch.sign(ratio - 1) * self.temperature
+        print(f'beta is now {self.beta}')
 
         if self.plot==True:
             X = Z.detach().numpy()
