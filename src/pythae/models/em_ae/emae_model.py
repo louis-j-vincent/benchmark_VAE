@@ -107,11 +107,11 @@ class EMAE(AE):
             LLloss, sep_loss = self.likelihood_loss(z,y)
             sep_loss = 0
             loss = recon_loss + (sep_loss + LLloss)*self.beta
-            self.recon_loss, self.ll_loss = recon_loss.detach().numpy(), LLloss.detach().numpy()
+            #self.recon_loss, self.ll_loss = recon_loss.detach().numpy(), LLloss.detach().numpy()
             print(recon_loss, embedding_loss, LLloss,loss)
         else:
             loss = recon_loss
-            self.recon_loss, self.ll_loss = 1,1
+            #self.recon_loss, self.ll_loss = 1,1
         #min_max_loss = self.min_max_loss(z,y)
         #loss += min_max_loss
 
