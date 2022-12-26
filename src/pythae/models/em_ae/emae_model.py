@@ -83,8 +83,8 @@ class EMAE(AE):
         z = self.encoder(x).embedding
         if self.variationnal:
             sigma_small = (y@self.Sigma**0.5)*torch.abs((self.quantile + torch.abs(y@self.mu))/(1.96 + torch.abs(z)))
-            sigma_small = torch.maximum(torch.ones(sigma_small.shape).to(self.device)*0.001, sigma_small)
-            z += torch.normal(torch.zeros(z.shape).to(self.device),sigma_small).to(self.device)
+            sigma_small_max = torch.maximum(torch.ones(sigma_small.shape).to(self.device)*0.001, sigma_small)
+            z += torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
 
         if self.Z is None:
             self.Z = z
