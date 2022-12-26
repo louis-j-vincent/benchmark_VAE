@@ -60,6 +60,7 @@ class EMAE(AE):
             self.mu[k,k] = 1.
         self.init = True
         self.Sigma = torch.ones(self.mu.shape).to(device)
+        self.quantile = 1
         #self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1).to(device)
         self.device = device
         self.alpha = (torch.ones(self.K)/self.K).to(device) #p probabilities for each gaussian 
@@ -81,7 +82,8 @@ class EMAE(AE):
 
         z = self.encoder(x).embedding
         if self.variationnal:
-            sigma_small = y@self.Sigma*torch.abs((1.96 + y@self.mu)/(1.96 + z))
+            sigma_small = y@self.Sigma*torch.abs((self.quantile + y@self.mu)/(1.96 + z))
+            sigma_small = torch.maximum(torch.ones(sigma_small.shape)*0.01, sigma_small)
             z += torch.normal(torch.zeros(z.shape).to(self.device),sigma_small).to(self.device)
 
         if self.Z is None:
@@ -98,7 +100,7 @@ class EMAE(AE):
     
         #self.temperature = min(0.2,self.temperature)
         #self.temperature = 0.01
-        if self.beta>0 and self.temperature > 0.2:
+        if self.beta>0 and self.temperature > 0.1:
             LLloss, sep_loss = self.likelihood_loss(z,y)
             sep_loss = 0
             loss = recon_loss + (sep_loss + LLloss)*self.beta
