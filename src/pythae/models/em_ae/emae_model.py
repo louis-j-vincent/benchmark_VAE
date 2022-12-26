@@ -66,6 +66,7 @@ class EMAE(AE):
         self.alpha = (torch.ones(self.K)/self.K).to(device) #p probabilities for each gaussian 
         self.hist = {'mu':self.mu, 'Sigma':self.Sigma}
         self.plot = False
+        self.temp_start = 0
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
@@ -105,7 +106,7 @@ class EMAE(AE):
     
         #self.temperature = min(0.2,self.temperature)
         #self.temperature = 0.01
-        if self.beta>0 and self.temperature > 0.1:
+        if self.beta>0 and self.temperature > self.temp_start:
             LLloss, sep_loss = self.likelihood_loss(z,y)
             sep_loss = 0
             loss = recon_loss + (sep_loss + LLloss)*self.beta
