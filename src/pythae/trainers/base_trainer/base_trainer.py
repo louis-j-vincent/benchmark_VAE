@@ -303,6 +303,8 @@ class BaseTrainer:
 
         for epoch in range(1, self.training_config.num_epochs + 1):
 
+            self.model.epoch = epoch
+
             self.callback_handler.on_epoch_begin(
                 training_config=self.training_config,
                 epoch=epoch,

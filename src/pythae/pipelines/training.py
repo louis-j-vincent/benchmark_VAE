@@ -120,6 +120,8 @@ class TrainingPipeline(Pipeline):
         self,
         train_data: Union[np.ndarray, torch.Tensor],
         eval_data: Union[np.ndarray, torch.Tensor] = None,
+        train_label: Union[np.ndarray, torch.Tensor] = None,
+        eval_label: Union[np.ndarray, torch.Tensor] = None,
         callbacks: List[TrainingCallback] = None,
     ):
         """
@@ -140,7 +142,12 @@ class TrainingPipeline(Pipeline):
 
         logger.info("Preprocessing train data...")
         train_data = self.data_processor.process_data(train_data)
-        train_dataset = self.data_processor.to_dataset(train_data)
+        if train_label is not None:
+            train_label = self.data_processor.process_data(train_label)
+            train_dataset = self.data_processor.to_dataset(train_data,train_label)
+        else:
+            train_dataset = self.data_processor.to_dataset(train_data)
+        
 
         self.train_data = train_data
 
@@ -150,7 +157,11 @@ class TrainingPipeline(Pipeline):
         if eval_data is not None:
             logger.info("Preprocessing eval data...\n")
             eval_data = self.data_processor.process_data(eval_data)
-            eval_dataset = self.data_processor.to_dataset(eval_data)
+            if eval_label is not None:
+                eval_label = self.data_processor.process_data(eval_label)
+                eval_dataset = self.data_processor.to_dataset(eval_data,eval_label)
+            else:
+                eval_dataset = self.data_processor.to_dataset(eval_data)
 
         else:
             eval_dataset = None
