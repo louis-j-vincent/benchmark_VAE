@@ -107,11 +107,11 @@ class EMAE(AE):
             LLloss, sep_loss = self.likelihood_loss(z,y)
             sep_loss = 0
             loss = recon_loss + (sep_loss + LLloss)*self.beta
+            self.recon_loss, self.ll_loss = recon_loss.detach().numpy(), LLloss.detach().numpy()
             print(recon_loss, embedding_loss, LLloss,loss)
         else:
             loss = recon_loss
-            LLloss = torch.clone(recon_loss)
-        self.recon_loss, self.ll_loss = recon_loss, LLloss
+            self.recon_loss, self.ll_loss = 1,1
         #min_max_loss = self.min_max_loss(z,y)
         #loss += min_max_loss
 
@@ -192,9 +192,12 @@ class EMAE(AE):
             tau_sum = tau[:,:,None].sum(axis=0).detach()
             self.mu = (tau[:,:,None]*Z[:,None,:]).sum(axis=0).detach()/tau_sum
             self.Sigma = (tau[:,:,None] * (Z[:,None,:]-self.mu[None,:,:])**2).sum(axis=0).detach()/tau_sum
-        ratio = self.recon_loss/self.ll_loss
-        self.beta += self.epoch**(-0.5) * torch.sign(ratio - 1) * self.temperature
-        print(f'beta is now {self.beta}')
+        #ratio = self.recon_loss/self.ll_loss #*self.temperature
+        #if ratio > 1:
+        #    self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))
+        #elif ratio < 1:
+        #    self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))
+        #print(f'beta is now {self.beta}, ratio was {ratio} with temp {self.temperature}')
 
         if self.plot==True:
             X = Z.detach().numpy()
