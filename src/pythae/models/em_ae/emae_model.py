@@ -110,7 +110,7 @@ class EMAE(AE):
             loss = recon_loss + (sep_loss + LLloss)*self.beta
             #self.recon_loss, self.ll_loss = recon_loss.detach().numpy(), LLloss.detach().numpy()
             print(recon_loss, embedding_loss, LLloss,loss)
-            self.ratio = self.temperature/(recon_loss/LLloss).detach().cpu().numpy().item()
+            self.ratio = 1/(recon_loss/LLloss).detach().cpu().numpy().item()
         else:
             loss = recon_loss
             self.ratio = self.beta
