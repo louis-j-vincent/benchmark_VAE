@@ -82,7 +82,7 @@ class EMAE(AE):
         torch.autograd.set_detect_anomaly(True)
 
         x = inputs["data"]
-        print(inputs["labels"])
+        #print(inputs["labels"])
         y = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K+1).float().to(self.device)
 
         z = self.encoder(x).embedding
