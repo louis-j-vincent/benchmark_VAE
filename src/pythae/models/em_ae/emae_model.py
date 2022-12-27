@@ -61,7 +61,6 @@ class EMAE(AE):
         self.init = True
         self.Sigma = torch.ones(self.mu.shape).to(device)
         self.quantile = torch.tensor(0.5)
-        #self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1).to(device)
         self.device = device
         self.alpha = (torch.ones(self.K)/self.K).to(device) #p probabilities for each gaussian 
         self.hist = {'mu':self.mu, 'Sigma':self.Sigma, 'beta':[self.beta]}
@@ -82,12 +81,11 @@ class EMAE(AE):
         torch.autograd.set_detect_anomaly(True)
 
         x = inputs["data"]
-        #print(inputs["labels"])
         y = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K+1).float().to(self.device)
 
         z = self.encoder(x).embedding
         if self.variationnal:
-            ratio = (self.quantile)/(1.96 + torch.abs(z - y[:,:self.K]@self.mu))
+            ratio = ((self.quantile)/(1.96 + torch.abs(z - y[:,:self.K]@self.mu)))**2
             sigma_small_max = torch.maximum((y[:,:self.K]@self.Sigma**0.5)*ratio,torch.tensor(0.001))
             z_var = z + torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
         else:
@@ -105,20 +103,15 @@ class EMAE(AE):
     
         if self.beta>0 and self.temperature > self.temp_start:
             LLloss, sep_loss = self.likelihood_loss(z,y[:,:self.K])
-            sep_loss = 0
-            loss = recon_loss + (sep_loss + LLloss)*self.beta
-            #self.recon_loss, self.ll_loss = recon_loss.detach().numpy(), LLloss.detach().numpy()
+            loss = recon_loss + LLloss*self.beta
             print(recon_loss, embedding_loss, LLloss,loss)
-            self.ratio = 1/(recon_loss/LLloss).detach().cpu().numpy().item()
+            self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
         else:
             loss = recon_loss
             self.ratio = self.beta
             #self.recon_loss, self.ll_loss = 1,1
         #min_max_loss = self.min_max_loss(z,y)
         #loss += min_max_loss
-
-        
-        #print(recon_loss,embedding_loss,min_max_loss)
 
         output = ModelOutput(
             loss=loss,
@@ -131,6 +124,7 @@ class EMAE(AE):
         return output
 
     def likelihood_loss(self, Z, y):
+
         #E-step
         Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
         Sigma = self.Sigma[None,:,:] 
@@ -139,40 +133,7 @@ class EMAE(AE):
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
 
-        #plt.hist((N_prob).detach().numpy().flatten())
-        #plt.show()
-
         return 1 - prob.mean(), separation_prob
-
-    def min_max_loss(self, Z, labels):
-        """
-        Loss to minimize variance within each cluster, maximize variance between the center of each cluster
-        """
-        mu_hat = (Z[:,None,:]*labels[:,:,None]).sum(axis=0) / labels[:,:,None].sum(axis=0)
-        var_hat = ((( (Z- mu_hat[None,:,:])**2 )[:,None,:]*labels[:,:,None]).sum(axis=0) / labels[:,:,None].sum(axis=0)).mean()
-        var_mu_hat = torch.var(mu_hat)
-
-        return var_hat - var_mu_hat
-
-    def detach_parameters(self):
-        self.Z = self.Z.detach().clone()
-        self.mu = self.mu.detach()
-        self.Sigma = self.Sigma.detach()
-        self.alpha = self.alpha.detach()
-
-    def draw_95_ellipse(self, mu, Sigma, c="black", alpha=1, ax=None):
-        if len(Sigma.shape) == 1:
-            Sigma = torch.diag(Sigme)
-        eigenvalues, eigenvectors = np.linalg.eig(Sigma)
-        axa = np.sqrt(eigenvalues[0] * 5.991)
-        axb = np.sqrt(eigenvalues[1] * 5.991)
-        va = eigenvectors[:, 0]
-        vb = eigenvectors[:, 1]
-        x = np.linspace(0, 2*np.pi, 100)
-        trace = np.array([np.cos(e)*va*axa + np.sin(e)*vb*axb + mu for e in x])
-        ax.plot(trace[:,0], trace[:,1], c=c, alpha=alpha, linewidth=3)
-
-        return ax 
 
     def update_parameters(self,Z=None):
         if Z is None:
@@ -185,16 +146,17 @@ class EMAE(AE):
         for i in range(1):
 
             #E-step
-            tau = self.labels[:,:self.K]#.detach().cpu()
+            tau = self.labels[:,:self.K].detach()
             #print(tau.mean())
             ## add this to complete missing values
-            missing_labels = torch.where(self.labels[:,-1]==1)[0]#.detach().cpu()
+            missing_labels = torch.where(self.labels[:,-1]==1)[0].detach()
             Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
             Sigma = self.Sigma[None,:,:] 
-            N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.sum(axis=0)
+            N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) ).detach()
             log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2)
-            log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None])#.detach().cpu()
-            tau[missing_labels] = torch.exp(log_tau[missing_labels])#.detach().cpu() #p(x_i ; z_i = k) p(z_i = k)
+            log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None])
+            tau[missing_labels] = torch.exp(log_tau[missing_labels]) #p(x_i ; z_i = k) p(z_i = k)
+            tau = tau.detach()
             #print(tau.mean())
 
             # M-step
@@ -214,17 +176,47 @@ class EMAE(AE):
             X = Z.detach().numpy()
             pca = PCA(n_components=2)
             X = pca.fit_transform(X)
-            fig, ax = plt.subplots(1,1,figisze=(18,8))
+            fig, ax = plt.subplots(1,1,figsize=(18,8))
             ax.scatter(X[:,0],X[:,1],c=torch.where(self.labels==1)[1].detach())
             for i in range(self.K):
                 mu = (self.mu[i]@pca.components_.T).detach().numpy()
                 Sigma = (pca.components_@torch.diag(self.Sigma[i]).detach().numpy()@pca.components_.T)
                 ax = self.draw_95_ellipse(mu, Sigma, alpha = float(self.alpha[i].detach()), ax=ax)
-            fig.save(f'plot{epoch}.png')
+            fig.savefig(f'plot{self.epoch}.png')
         self.Z = None
-        self.hist['mu'] = torch.vstack([self.hist['mu'],self.mu])
-        self.hist['Sigma'] = torch.vstack([self.hist['Sigma'],self.Sigma])
-        self.hist['beta'] += [self.beta]
+        #self.hist['mu'] = torch.vstack([self.hist['mu'],self.mu])
+        #self.hist['Sigma'] = torch.vstack([self.hist['Sigma'],self.Sigma])
+        #self.hist['beta'] += [self.beta]
+
+    def min_max_loss(self, Z, labels):
+        """
+        Loss to minimize variance within each cluster, maximize variance between the center of each cluster
+        """
+        mu_hat = (Z[:,None,:]*labels[:,:,None]).sum(axis=0) / labels[:,:,None].sum(axis=0)
+        var_hat = ((( (Z- mu_hat[None,:,:])**2 )[:,None,:]*labels[:,:,None]).sum(axis=0) / labels[:,:,None].sum(axis=0)).mean()
+        var_mu_hat = torch.var(mu_hat)
+
+        return var_hat - var_mu_hat
+
+    def detach_parameters(self):
+        self.Z = self.Z.detach().clone()
+        self.mu = self.mu.detach()
+        self.Sigma = self.Sigma.detach()
+        self.alpha = self.alpha.detach()
+
+    def draw_95_ellipse(self, mu, Sigma, c="black", alpha=1, ax=None):
+        if len(Sigma.shape) == 1:
+            Sigma = torch.diag(Sigma)
+        eigenvalues, eigenvectors = np.linalg.eig(Sigma)
+        axa = np.sqrt(eigenvalues[0] * 5.991)
+        axb = np.sqrt(eigenvalues[1] * 5.991)
+        va = eigenvectors[:, 0]
+        vb = eigenvectors[:, 1]
+        x = np.linspace(0, 2*np.pi, 100)
+        trace = np.array([np.cos(e)*va*axa + np.sin(e)*vb*axb + mu for e in x])
+        ax.plot(trace[:,0], trace[:,1], c=c, alpha=alpha, linewidth=3)
+
+        return ax 
 
     ## OLD
 
