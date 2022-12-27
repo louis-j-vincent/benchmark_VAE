@@ -86,7 +86,8 @@ class EMAE(AE):
 
         z = self.encoder(x).embedding
         if self.variationnal:
-            ratio = (self.quantile + torch.abs(y@self.mu))/(1.96 + torch.abs(z))
+            #ratio = (self.quantile + torch.abs(y@self.mu))/(1.96 + torch.abs(z))
+            ratio = (self.quantile)/(1.96 + torch.abs(z - y@self.mu))
             sigma_small_max = torch.maximum((y@self.Sigma**0.5)*ratio,torch.tensor(0.001))
             #sigma_small_max = torch.maximum(torch.ones(sigma_small.shape).to(self.device)*0.001, sigma_small)
             z_var = z + torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
@@ -109,8 +110,10 @@ class EMAE(AE):
             loss = recon_loss + (sep_loss + LLloss)*self.beta
             #self.recon_loss, self.ll_loss = recon_loss.detach().numpy(), LLloss.detach().numpy()
             print(recon_loss, embedding_loss, LLloss,loss)
+            self.ratio = 1./(recon_loss/LLloss).detach().numpy().item()
         else:
             loss = recon_loss
+            self.ratio = self.beta
             #self.recon_loss, self.ll_loss = 1,1
         #min_max_loss = self.min_max_loss(z,y)
         #loss += min_max_loss
@@ -198,6 +201,8 @@ class EMAE(AE):
         #elif ratio < 1:
         #    self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))
         #print(f'beta is now {self.beta}, ratio was {ratio} with temp {self.temperature}')
+        self.beta = self.ratio
+        print(f'beta is now {self.beta}')
 
         if self.plot==True:
             X = Z.detach().numpy()
