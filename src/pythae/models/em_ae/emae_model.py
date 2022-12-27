@@ -60,11 +60,11 @@ class EMAE(AE):
             self.mu[k,k] = 1.
         self.init = True
         self.Sigma = torch.ones(self.mu.shape).to(device)
-        self.quantile = torch.tensor(1)
+        self.quantile = torch.tensor(0.5)
         #self.Sigma = torch.eye(model_config.latent_dim).repeat(self.K,1,1).to(device)
         self.device = device
         self.alpha = (torch.ones(self.K)/self.K).to(device) #p probabilities for each gaussian 
-        self.hist = {'mu':self.mu, 'Sigma':self.Sigma}
+        self.hist = {'mu':self.mu, 'Sigma':self.Sigma, 'beta':[self.beta]}
         self.plot = False
         self.recon_loss, self.ll_loss = None, None
         self.temp_start = 0
@@ -82,14 +82,13 @@ class EMAE(AE):
         torch.autograd.set_detect_anomaly(True)
 
         x = inputs["data"]
-        y = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K).float().to(self.device)
+        print(inputs["labels"])
+        y = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K+1).float().to(self.device)
 
         z = self.encoder(x).embedding
         if self.variationnal:
-            #ratio = (self.quantile + torch.abs(y@self.mu))/(1.96 + torch.abs(z))
-            ratio = (self.quantile)/(1.96 + torch.abs(z - y@self.mu))
-            sigma_small_max = torch.maximum((y@self.Sigma**0.5)*ratio,torch.tensor(0.001))
-            #sigma_small_max = torch.maximum(torch.ones(sigma_small.shape).to(self.device)*0.001, sigma_small)
+            ratio = (self.quantile)/(1.96 + torch.abs(z - y[:,:self.K]@self.mu))
+            sigma_small_max = torch.maximum((y[:,:self.K]@self.Sigma**0.5)*ratio,torch.tensor(0.001))
             z_var = z + torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
         else:
             z_var = z
@@ -105,7 +104,7 @@ class EMAE(AE):
         loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
     
         if self.beta>0 and self.temperature > self.temp_start:
-            LLloss, sep_loss = self.likelihood_loss(z,y)
+            LLloss, sep_loss = self.likelihood_loss(z,y[:,:self.K])
             sep_loss = 0
             loss = recon_loss + (sep_loss + LLloss)*self.beta
             #self.recon_loss, self.ll_loss = recon_loss.detach().numpy(), LLloss.detach().numpy()
@@ -136,9 +135,7 @@ class EMAE(AE):
         Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
         Sigma = self.Sigma[None,:,:] 
         N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
-        N_prob = (torch.exp(N_log_prob) * y[:,:,None]).sum(axis=1) #only use the kth gaussian
-        #log_prob = torch.log(prob).sum(axis=0) #sum on all patients
-            
+        N_prob = (torch.exp(N_log_prob) * y[:,:self.K,None]).sum(axis=1) #only use the kth gaussian            
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
 
@@ -181,15 +178,24 @@ class EMAE(AE):
         if Z is None:
             Z = self.Z
         if self.init==True:
-            self.mu = torch.matmul(self.labels.T,Z)
-            self.alpha = self.labels.mean(axis=0)
+            self.mu = torch.matmul(self.labels[:,:self.K].T,Z)
+            self.alpha = self.labels[:,:self.K].mean(axis=0)
             self.init=False
         print('Updating parameters')
         for i in range(1):
 
             #E-step
-            tau = self.labels
-            print(tau.mean())
+            tau = self.labels[:,:self.K]
+            #print(tau.mean())
+            ## add this to complete missing values
+            missing_labels = torch.where(self.labels[:,-1]==1)[0].detach()
+            Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
+            Sigma = self.Sigma[None,:,:] 
+            N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.sum(axis=0)
+            log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2)
+            log_tau = log_tau - torch.logsumexp(log_tau, axis=1)[:,None]
+            tau[missing_labels] = torch.exp(log_tau[missing_labels]).detach() #p(x_i ; z_i = k) p(z_i = k)
+            #print(tau.mean())
 
             # M-step
             tau_sum = tau[:,:,None].sum(axis=0).detach()
@@ -218,6 +224,7 @@ class EMAE(AE):
         self.Z = None
         self.hist['mu'] = torch.vstack([self.hist['mu'],self.mu])
         self.hist['Sigma'] = torch.vstack([self.hist['Sigma'],self.Sigma])
+        self.hist['beta'] += [self.beta]
 
     ## OLD
 
