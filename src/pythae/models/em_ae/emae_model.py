@@ -188,13 +188,13 @@ class EMAE(AE):
             tau = self.labels[:,:self.K]
             #print(tau.mean())
             ## add this to complete missing values
-            missing_labels = torch.where(self.labels[:,-1]==1)[0].detach()
+            missing_labels = torch.where(self.labels[:,-1]==1)[0].detach().cpu()
             Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
             Sigma = self.Sigma[None,:,:] 
             N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.sum(axis=0)
             log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2)
             log_tau = log_tau - torch.logsumexp(log_tau, axis=1)[:,None]
-            tau[missing_labels] = torch.exp(log_tau[missing_labels]).detach() #p(x_i ; z_i = k) p(z_i = k)
+            tau[missing_labels] = torch.exp(log_tau[missing_labels]).detach().cpu() #p(x_i ; z_i = k) p(z_i = k)
             #print(tau.mean())
 
             # M-step
