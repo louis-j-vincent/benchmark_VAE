@@ -146,23 +146,25 @@ class EMAE(AE):
         for i in range(1):
 
             #E-step
-            tau = self.labels[:,:self.K].detach()
+            tau = self.labels[:,:self.K].detach().cpu()
             #print(tau.mean())
             ## add this to complete missing values
-            missing_labels = torch.where(self.labels[:,-1]==1)[0].detach()
+            missing_labels = torch.where(self.labels[:,-1]==1)[0].detach().cpu()
             Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
             Sigma = self.Sigma[None,:,:] 
-            N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) ).detach()
+            N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) ).detach().cpu()
             log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2)
             log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None])
             tau[missing_labels] = torch.exp(log_tau[missing_labels]) #p(x_i ; z_i = k) p(z_i = k)
-            tau = tau.detach()
+            print(missing_labels)
+            print(tau[missing_labels])
+            tau = tau.detach().cpu()
             #print(tau.mean())
 
             # M-step
-            tau_sum = tau[:,:,None].sum(axis=0).detach()
-            self.mu = (tau[:,:,None]*Z[:,None,:]).sum(axis=0).detach()/tau_sum
-            self.Sigma = (tau[:,:,None] * (Z[:,None,:]-self.mu[None,:,:])**2).sum(axis=0).detach()/tau_sum
+            tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
+            self.mu = (tau[:,:,None]*Z[:,None,:]).sum(axis=0).detach().cpu()/tau_sum
+            self.Sigma = (tau[:,:,None] * (Z[:,None,:]-self.mu[None,:,:])**2).sum(axis=0).detach().cpu()/tau_sum
         #ratio = self.recon_loss/self.ll_loss #*self.temperature
         if self.ratio > 1:
             self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))
@@ -184,9 +186,9 @@ class EMAE(AE):
                 ax = self.draw_95_ellipse(mu, Sigma, alpha = float(self.alpha[i].detach()), ax=ax)
             fig.savefig(f'plot{self.epoch}.png')
         self.Z = None
-        #self.hist['mu'] = torch.vstack([self.hist['mu'],self.mu])
-        #self.hist['Sigma'] = torch.vstack([self.hist['Sigma'],self.Sigma])
-        #self.hist['beta'] += [self.beta]
+        self.hist['mu'] = torch.vstack([self.hist['mu'],self.mu])
+        self.hist['Sigma'] = torch.vstack([self.hist['Sigma'],self.Sigma])
+        self.hist['beta'] += [self.beta]
 
     def min_max_loss(self, Z, labels):
         """
