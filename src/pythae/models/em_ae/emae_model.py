@@ -82,10 +82,10 @@ class EMAE(AE):
         x = inputs["data"]
         y_missing = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K+1).float().to(self.device)
         y = y_missing[:,:self.K]
-        print(y_missing.shape, 'y missingshape')
-        print(x[0])
-        print(y_missing[0:5])
-        print('Missing')
+        #print(y_missing.shape, 'y missingshape')
+        #print(x[0])
+        #print(y_missing[0:5])
+        #print('Missing')
 
         z = self.encoder(x).embedding
         if self.variationnal:
@@ -159,8 +159,8 @@ class EMAE(AE):
                 log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2)
                 log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None])
                 tau[missing_labels] = torch.exp(log_tau[missing_labels]) #p(x_i ; z_i = k) p(z_i = k)
-                print(missing_labels)
-                print(tau[missing_labels])
+                #print(missing_labels)
+                #print(tau[missing_labels])
                 tau = tau.detach().cpu()
             #print(tau.mean())
 
