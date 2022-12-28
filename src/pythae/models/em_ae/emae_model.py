@@ -194,9 +194,9 @@ class EMAE(AE):
                 self.mu = (tau[~missing_labels,:,None]*Z[~missing_labels,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
                 self.Sigma = (tau[~missing_labels,:,None] * (Z[~missing_labels,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
         
-        self.tau = tau.to(self.device)
-        self.mu = self.mu.to(self.device)
-        self.Sigma = self.Sigma.to(self.device)
+            self.tau = tau.to(self.device)
+            self.mu = self.mu.to(self.device)
+            self.Sigma = self.Sigma.to(self.device)
 
         #ratio = self.recon_loss/self.ll_loss #*self.temperature
         if self.ratio > 1 and self.beta < 1:
