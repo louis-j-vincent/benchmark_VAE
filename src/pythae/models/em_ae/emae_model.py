@@ -141,7 +141,8 @@ class EMAE(AE):
 
         #get log prob
         N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
-        N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian            
+        N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
+        print(N_prob.mean(),(torch.exp(N_log_prob)[~missing_labels] * tau[~missing_labels,:self.K,None]).sum(axis=1),'mean on missing and non missing')           
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
 
@@ -170,8 +171,6 @@ class EMAE(AE):
                 log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
                 log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
                 tau[missing_labels] = torch.exp(log_tau[missing_labels]) 
-                #print(missing_labels)
-                #print(tau[missing_labels])
                 tau = tau.detach().cpu()
                 if self.print_tau:
                     print(tau.mean(axis=0))
