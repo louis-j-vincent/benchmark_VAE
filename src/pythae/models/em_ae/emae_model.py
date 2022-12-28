@@ -159,8 +159,6 @@ class EMAE(AE):
                 log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2)
                 log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
                 tau[missing_labels] = torch.exp(log_tau[missing_labels]) #p(x_i ; z_i = k) p(z_i = k)
-                #print(missing_labels)
-                #print(tau[missing_labels])
                 tau = tau.detach().cpu()
             #print(tau.mean())
 
