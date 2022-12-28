@@ -78,40 +78,40 @@ class EMAE(AE):
             ModelOutput: An instance of ModelOutput containing all the relevant parameters
         """
 
-        torch.autograd.set_detect_anomaly(True)
-
         x = inputs["data"]
-        y = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K+1).float().to(self.device)
+        y_missing = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K+1).float().to(self.device)
+        y = y_missing[:,:self.K]
+        print(y_missing.shape, 'y missingshape')
+        print(inputs["data"][0])
+        print(y_missing[0:5])
+        print('Missing')
 
         z = self.encoder(x).embedding
         if self.variationnal:
-            ratio = ((self.quantile)/(1.96 + torch.abs(z - y[:,:self.K]@self.mu)))**2
-            sigma_small_max = torch.maximum((y[:,:self.K]@self.Sigma**0.5)*ratio,torch.tensor(0.001))
+            ratio = ((self.quantile)/(1.96 + torch.abs(z - y@self.mu)))**2
+            sigma_small_max = torch.maximum((y@self.Sigma**0.5)*ratio,torch.tensor(0.001))
             z_var = z + torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
         else:
             z_var = z
 
         if self.Z is None:
             self.Z = z
-            self.labels = y
+            self.labels = y_missing
         else:
             self.Z = torch.cat((self.Z, z),0)
-            self.labels = torch.cat((self.labels, y),0)
+            self.labels = torch.cat((self.labels, y_missing),0)
         recon_x = self.decoder(z_var)["reconstruction"]
 
         loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
     
         if self.beta>0 and self.temperature > self.temp_start:
-            LLloss, sep_loss = self.likelihood_loss(z,y[:,:self.K])
+            LLloss, sep_loss = self.likelihood_loss(z,y)
             loss = recon_loss + LLloss*self.beta
             print(recon_loss, embedding_loss, LLloss,loss)
             self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
         else:
             loss = recon_loss
             self.ratio = self.beta
-            #self.recon_loss, self.ll_loss = 1,1
-        #min_max_loss = self.min_max_loss(z,y)
-        #loss += min_max_loss
 
         output = ModelOutput(
             loss=loss,
@@ -136,17 +136,18 @@ class EMAE(AE):
         return 1 - prob.mean(), separation_prob
 
     def update_parameters(self,Z=None):
+        labels = self.labels[:,:self.K]
         if Z is None:
             Z = self.Z
         if self.init==True:
-            self.mu = torch.matmul(self.labels[:,:self.K].T,Z)
-            self.alpha = self.labels[:,:self.K].mean(axis=0)
+            self.mu = torch.matmul(labels.T,Z)
+            self.alpha = labels.mean(axis=0)
             self.init=False
         print('Updating parameters')
         for i in range(1):
 
             #E-step
-            tau = self.labels[:,:self.K].detach().cpu()
+            tau = labels.detach().cpu()
             #print(tau.mean())
             ## add this to complete missing values
             missing_labels = torch.where(self.labels[:,-1]==1)[0].detach().cpu()
