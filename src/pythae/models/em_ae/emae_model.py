@@ -163,9 +163,12 @@ class EMAE(AE):
                 #print(missing_labels)
                 #print(tau[missing_labels])
                 tau = tau.detach().cpu()
-            if self.print_tau:
-                print(tau.mean(axis=0))
-                print(tau.mean(axis=1))
+                if self.print_tau:
+                    print(tau.mean(axis=0))
+                    print(tau.mean(axis=1))
+                    print(tau[missing_labels].mean(axis=0))
+                    print(tau[missing_labels].mean(axis=1))
+
             #print(tau.mean())
 
             # M-step
