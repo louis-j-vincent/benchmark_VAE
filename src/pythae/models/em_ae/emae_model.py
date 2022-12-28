@@ -83,7 +83,7 @@ class EMAE(AE):
         y_missing = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K+1).float().to(self.device)
         y = y_missing[:,:self.K]
         print(y_missing.shape, 'y missingshape')
-        print(inputs["data"][0])
+        print(x[0])
         print(y_missing[0:5])
         print('Missing')
 
