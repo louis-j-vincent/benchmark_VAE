@@ -129,10 +129,18 @@ class EMAE(AE):
     def likelihood_loss(self, Z, y):
 
         #E-step
+        tau = torch.clone(y).detach().cpu()
+        missing_labels = torch.where(y[:,-1]==1)[0].detach().cpu()
         Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
         Sigma = self.Sigma[None,:,:] 
+        N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
+        log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
+        log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
+        tau[missing_labels] = torch.exp(log_tau[missing_labels]) 
+
+        #get log prob
         N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
-        N_prob = (torch.exp(N_log_prob) * y[:,:self.K,None]).sum(axis=1) #only use the kth gaussian            
+        N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian            
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
 
@@ -170,8 +178,6 @@ class EMAE(AE):
                     print(tau[missing_labels].mean(axis=0))
                     print(tau[missing_labels].mean(axis=1))
 
-            #print(tau.mean())
-
             # M-step
             if self.use_missing_labels:
                 tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
@@ -181,6 +187,7 @@ class EMAE(AE):
                 tau_sum = tau[~missing_labels,:,None].sum(axis=0).detach().cpu()
                 self.mu = (tau[~missing_labels,:,None]*Z[~missing_labels,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
                 self.Sigma = (tau[~missing_labels,:,None] * (Z[~missing_labels,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
+        self.tau = self.tau.to(self.device)
         self.mu = self.mu.to(self.device)
         self.Sigma = self.Sigma.to(self.device)
 
