@@ -136,7 +136,8 @@ class EMAE(AE):
         N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
         log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
         log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
-        tau[missing_labels] = torch.exp(log_tau[missing_labels]).to(self.device) 
+        tau[missing_labels] = torch.exp(log_tau[missing_labels])#
+        tau = tau.to(self.device) 
 
         #get log prob
         N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
