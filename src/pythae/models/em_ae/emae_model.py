@@ -301,10 +301,10 @@ class EMAE(AE):
             loss = recon_loss + LLloss*self.beta
             print(recon_loss.item(), embedding_loss.item(), LLloss.item(),loss.item())
             self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
-            #self.ratio = 1
+            self.ratio = 1
         else:
             loss = recon_loss
-            self.ratio = self.beta
+            self.ratio = 1#self.beta
 
         output = ModelOutput(
             loss=loss,
