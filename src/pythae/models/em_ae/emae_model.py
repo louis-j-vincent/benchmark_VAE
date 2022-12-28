@@ -361,7 +361,7 @@ class EMAE(AE):
                 print('delta estim: ',delta_estim.mean().item())
                 print(delta_estim.mean(axis=1))
                 print(delta_estim.mean(axis=0))
-                tau[missing_labels] = self.labels[missing_labels,self.K:].to(self.device)
+                tau[missing_labels] = self.labels.detach().cpu()[missing_labels,self.K:]#.to(self.device)
                 print('Now im cheating by adding the right labels')
 
                 #plt.scatter(torch.exp(log_tau[~missing_labels]).detach().cpu(),tau[~missing_labels].detach().cpu());
