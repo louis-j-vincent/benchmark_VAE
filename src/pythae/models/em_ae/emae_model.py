@@ -143,7 +143,7 @@ class EMAE(AE):
             Z = self.Z
         if self.init==True:
             self.mu = torch.matmul(labels.T,Z)
-            self.alpha = labels.mean(axis=0) + (1/self.K)*(self.labels[:,-1].mean(axis=1))
+            self.alpha = labels.mean(axis=0) + (1/self.K)*(self.labels[:,-1].mean())
             self.init=False
         print('Updating parameters')
         for i in range(1):
