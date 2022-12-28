@@ -185,7 +185,7 @@ class EMAE(AE):
         self.Sigma = self.Sigma.to(self.device)
 
         #ratio = self.recon_loss/self.ll_loss #*self.temperature
-        if self.ratio > 1:
+        if self.ratio > 1 and self.beta < 1:
             self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))
         elif self.ratio < 1:
             self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))
