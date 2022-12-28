@@ -357,7 +357,7 @@ class EMAE(AE):
                 log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
                 log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
                 tau[missing_labels] = torch.exp(log_tau[missing_labels]) 
-                delta_estim = torch.abs(tau[missing_labels] - self.labels[missing_labels,self.K:])
+                delta_estim = torch.abs(tau[missing_labels].detach().cpu() - self.labels[missing_labels,self.K:].detach().cpu())
                 print('delta estim: ',delta_estim.mean().item())
                 print(delta_estim.mean(axis=1))
                 print(delta_estim.mean(axis=0))
