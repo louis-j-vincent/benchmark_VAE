@@ -143,7 +143,7 @@ class EMAE(AE):
             Z = self.Z
         if self.init==True:
             self.mu = torch.matmul(labels.T,Z)
-            self.alpha = labels.mean(axis=0)
+            self.alpha = labels.mean(axis=0) + (1/self.K)*(self.labels[:,-1].mean(axis=1))
             self.init=False
         print('Updating parameters')
         for i in range(1):
@@ -157,9 +157,9 @@ class EMAE(AE):
                 Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
                 Sigma = self.Sigma[None,:,:] 
                 N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
-                log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2)
+                log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
                 log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
-                tau[missing_labels] = torch.exp(log_tau[missing_labels]) #p(x_i ; z_i = k) p(z_i = k)
+                tau[missing_labels] = torch.exp(log_tau[missing_labels]) 
                 #print(missing_labels)
                 #print(tau[missing_labels])
                 tau = tau.detach().cpu()
