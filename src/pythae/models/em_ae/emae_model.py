@@ -375,6 +375,7 @@ class EMAE(AE):
             t0, t1 = self.temperature*(1-missing_ratio), (1 - self.temperature)*missing_ratio
             self.mu = mu_0*t0 + mu_1*t1
             self.Sigma = Sigma_0*t0 + Sigma_1*t1
+            #set to device
             self.tau = tau.to(self.device)
             self.mu = self.mu.to(self.device)
             self.Sigma = self.Sigma.to(self.device)
