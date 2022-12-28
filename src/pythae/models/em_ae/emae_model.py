@@ -166,8 +166,8 @@ class EMAE(AE):
 
             # M-step
             tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
-            self.mu = (tau[:,:,None]*Z[:,None,:]).sum(axis=0).detach().cpu()/tau_sum
-            self.Sigma = (tau[:,:,None] * (Z[:,None,:]-self.mu[None,:,:])**2).sum(axis=0).detach().cpu()/tau_sum
+            self.mu = (tau[:,:,None]*Z[:,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
+            self.Sigma = (tau[:,:,None] * (Z[:,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
         #ratio = self.recon_loss/self.ll_loss #*self.temperature
         if self.ratio > 1:
             self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))
