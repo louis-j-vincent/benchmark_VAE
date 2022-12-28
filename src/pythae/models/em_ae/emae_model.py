@@ -151,7 +151,7 @@ class EMAE(AE):
             tau = labels.detach().cpu()
             #print(tau.mean())
             ## add this to complete missing values
-            if self.infer = True
+            if self.infer == True
                 missing_labels = torch.where(self.labels[:,-1]==1)[0].detach().cpu()
                 Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
                 Sigma = self.Sigma[None,:,:] 
