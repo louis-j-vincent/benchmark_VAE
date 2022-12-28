@@ -155,9 +155,9 @@ class EMAE(AE):
                 missing_labels = torch.where(self.labels[:,-1]==1)[0].detach().cpu()
                 Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
                 Sigma = self.Sigma[None,:,:] 
-                N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) ).detach().cpu()
+                N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
                 log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2)
-                log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None])
+                log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
                 tau[missing_labels] = torch.exp(log_tau[missing_labels]) #p(x_i ; z_i = k) p(z_i = k)
                 #print(missing_labels)
                 #print(tau[missing_labels])
