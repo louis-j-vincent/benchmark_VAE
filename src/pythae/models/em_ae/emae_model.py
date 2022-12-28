@@ -244,6 +244,22 @@ class EMAE(AE):
 
         return ax 
 
+    def loss_function(self, recon_x, x, z):
+
+        recon_loss = F.mse_loss(
+            recon_x.reshape(x.shape[0], -1), x.reshape(x.shape[0], -1), reduction="none"
+        ).mean(dim=-1) #was sum before I modified
+
+        embedding_loss = 0.5 * torch.linalg.norm(z, dim=-1) ** 2
+
+        return (
+            (recon_loss + self.model_config.embedding_weight * embedding_loss).mean(
+                dim=0
+            ),
+            (recon_loss).mean(dim=0),
+            (embedding_loss).mean(dim=0),
+        )
+
 #new functions for debugging
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
