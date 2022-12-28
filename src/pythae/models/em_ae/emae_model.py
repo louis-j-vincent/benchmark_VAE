@@ -317,6 +317,7 @@ class EMAE(AE):
 
         #E-step
         tau = torch.clone(y).detach().cpu()
+        print(tau.shape,'tau shape')
         missing_labels = torch.where(y[:,self.K:].sum(axis=1)>0)[0].detach().cpu()
         Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
         Sigma = self.Sigma[None,:,:] 
