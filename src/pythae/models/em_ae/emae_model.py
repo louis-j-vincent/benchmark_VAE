@@ -70,6 +70,7 @@ class EMAE(AE):
         self.infer = False
         self.print_tau = True
         self.use_missing_labels = False
+        self.EM_steps = 10
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
@@ -157,7 +158,7 @@ class EMAE(AE):
             self.alpha = labels.mean(axis=0) + (1/self.K)*(self.labels[:,-1].mean())
             self.init=False
         print('Updating parameters')
-        for i in range(1):
+        for i in range(self.EM_steps):
 
             #E-step
             tau = torch.clone(labels).detach().cpu()
@@ -171,6 +172,11 @@ class EMAE(AE):
                 log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
                 log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
                 tau[missing_labels] = torch.exp(log_tau[missing_labels]) 
+
+                #plt.scatter(torch.exp(log_tau[~missing_labels]).detach().cpu(),tau[~missing_labels].detach().cpu());
+                #plt.show();
+                print('Mean diff between tau and truth')
+                print((torch.exp(log_tau[~missing_labels]).detach().cpu() - tau[~missing_labels].detach().cpu()).mean())
                 tau = tau.detach().cpu()
                 if self.print_tau:
                     print(tau.mean(axis=0))
@@ -187,6 +193,7 @@ class EMAE(AE):
                 tau_sum = tau[~missing_labels,:,None].sum(axis=0).detach().cpu()
                 self.mu = (tau[~missing_labels,:,None]*Z[~missing_labels,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
                 self.Sigma = (tau[~missing_labels,:,None] * (Z[~missing_labels,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
+        
         self.tau = tau.to(self.device)
         self.mu = self.mu.to(self.device)
         self.Sigma = self.Sigma.to(self.device)
