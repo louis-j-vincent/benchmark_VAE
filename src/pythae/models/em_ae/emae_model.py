@@ -372,7 +372,7 @@ class EMAE(AE):
                 #print('Mean diff between tau and truth')
                 #print((torch.exp(log_tau[~missing_labels]).detach().cpu() - tau[~missing_labels].detach().cpu()).mean().item())
                 tau = tau.detach().cpu()
-                if self.print_tau:
+                #if self.print_tau:
                     #print(tau.mean(axis=0))
                     #print(tau.mean(axis=1))
                     #print(tau[missing_labels].mean(axis=0))
