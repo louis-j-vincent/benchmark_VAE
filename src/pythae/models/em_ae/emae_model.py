@@ -295,7 +295,7 @@ class EMAE(AE):
         loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
     
         if self.beta>0 and self.temperature > self.temp_start:
-            LLloss, sep_loss = self.likelihood_loss(z,y)
+            LLloss, sep_loss = self.likelihood_loss(z,y_missing)
             loss = recon_loss + LLloss*self.beta
             print(recon_loss.item(), embedding_loss.item(), LLloss.item(),loss.item())
             self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
