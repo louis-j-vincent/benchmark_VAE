@@ -68,6 +68,7 @@ class EMAE(AE):
         self.recon_loss, self.ll_loss = None, None
         self.temp_start = 0
         self.infer = False
+        self.print_tau = True
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
@@ -162,6 +163,9 @@ class EMAE(AE):
                 #print(missing_labels)
                 #print(tau[missing_labels])
                 tau = tau.detach().cpu()
+            if self.print_tau:
+                print(tau.mean(axis=0))
+                print(tau.mean(axis=1))
             #print(tau.mean())
 
             # M-step
