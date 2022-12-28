@@ -362,6 +362,20 @@ class EMAE(AE):
                 tau[missing_labels] = torch.exp(log_tau[missing_labels]) 
                 tau = tau.detach().cpu()
 
+            #M-step
+            tau_sum_0 = tau[missing_labels,:,None].sum(axis=0).detach().cpu()
+            mu_0 = (tau[missing_labels,:,None]*Z[missing_labels,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum_0
+            Sigma_0 = (tau[missing_labels,:,None] * (Z[missing_labels,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum_0
+    
+            tau_sum_1 = tau[~missing_labels,:,None].sum(axis=0).detach().cpu()
+            mu_1 = (tau[~missing_labels,:,None]*Z[~missing_labels,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum_1
+            Sigma_1 = (tau[~missing_labels,:,None] * (Z[~missing_labels,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum_1
+    
+            missing_ratio = len(missing_labels)/len(tau)
+            t0, t1 = self.temperature*(1-missing_ratio), (1 - self.temperature)*missing_ratio
+            self.mu = mu_0*t0 + mu_1*t1
+            self.Sigma = Sigma_0*t0 + Sigma_1*t1
+
             # M-step
             if self.use_missing_labels:
                 tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
