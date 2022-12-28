@@ -384,7 +384,7 @@ class EMAE(AE):
         if self.ratio > 1 and self.beta < 1:
             self.beta = self.beta * (1.1)**(1-self.temperature)
         elif self.ratio < 1:
-            self.beta = self.beta * (1.1)**(1/(1-self.temperature))
+            self.beta = self.beta * (1.1)**(-(1-self.temperature))
         print(f'beta is now {self.beta}')
 
         if self.plot==True:
