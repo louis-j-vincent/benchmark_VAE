@@ -38,6 +38,8 @@ class EMAE(AE):
         provided MLP you may end up with a ``MemoryError``.
     """
 
+    ##TO DO : add loss to penalise KNOWN data points that are far from given gaussian (with tau)
+
     def __init__(
         self,
         model_config: EMAE_Config,
@@ -299,9 +301,10 @@ class EMAE(AE):
             loss = recon_loss + LLloss*self.beta
             print(recon_loss.item(), embedding_loss.item(), LLloss.item(),loss.item())
             self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
+            self.ratio = 1
         else:
             loss = recon_loss
-            self.ratio = self.beta
+            self.ratio = 1#self.beta
 
         output = ModelOutput(
             loss=loss,
@@ -317,7 +320,6 @@ class EMAE(AE):
 
         #E-step
         tau = torch.clone(y[:,:self.K]).detach().cpu()
-        #print(tau.shape,'tau shape')
         missing_labels = torch.where(y[:,self.K:].sum(axis=1)>0)[0].detach().cpu()
         Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
         Sigma = self.Sigma[None,:,:] 
@@ -325,14 +327,12 @@ class EMAE(AE):
         log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
         log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
         tau[missing_labels] = torch.exp(log_tau[missing_labels])#
-        #tau[missing_labels] = y.detach().cpu()[missing_labels,self.K:]#.to(self.device)
 
         tau = tau.to(self.device) 
 
         #get log prob
         N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
         N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
-        #print(N_prob.mean().item(),(torch.exp(N_log_prob)[~missing_labels] * tau[~missing_labels,:self.K,None]).sum(axis=1).mean().item(),'mean on missing and non missing')           
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
 
@@ -360,23 +360,7 @@ class EMAE(AE):
                 log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
                 log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
                 tau[missing_labels] = torch.exp(log_tau[missing_labels]) 
-                delta_estim = torch.abs(tau[missing_labels].detach().cpu() - self.labels[missing_labels,self.K:].detach().cpu())
-                #print('delta estim: ',delta_estim.mean().item())
-                #print(delta_estim.mean(axis=1))
-                #print(delta_estim.mean(axis=0))
-                #tau[missing_labels] = self.labels.detach().cpu()[missing_labels,self.K:]#.to(self.device)
-                #print('Now im cheating by adding the right labels')
-
-                #plt.scatter(torch.exp(log_tau[~missing_labels]).detach().cpu(),tau[~missing_labels].detach().cpu());
-                #plt.show();
-                #print('Mean diff between tau and truth')
-                #print((torch.exp(log_tau[~missing_labels]).detach().cpu() - tau[~missing_labels].detach().cpu()).mean().item())
                 tau = tau.detach().cpu()
-                #if self.print_tau:
-                    #print(tau.mean(axis=0))
-                    #print(tau.mean(axis=1))
-                    #print(tau[missing_labels].mean(axis=0))
-                    #print(tau[missing_labels].mean(axis=1))
 
             # M-step
             if self.use_missing_labels:
@@ -392,13 +376,15 @@ class EMAE(AE):
             self.mu = self.mu.to(self.device)
             self.Sigma = self.Sigma.to(self.device)
 
-        #ratio = self.recon_loss/self.ll_loss #*self.temperature
+        #if self.ratio > 1 and self.beta < 1:
+        #    self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))
+        #elif self.ratio < 1:
+        #    self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))
+
         if self.ratio > 1 and self.beta < 1:
-            self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))
+            self.beta = self.beta * (1.1)**(1-self.temperature)
         elif self.ratio < 1:
-            self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))
-        #print(f'beta is now {self.beta}, ratio was {ratio} with temp {self.temperature}')
-        #self.beta = self.ratio
+            self.beta = self.beta * (1.1)**(1/(1-self.temperature))
         print(f'beta is now {self.beta}')
 
         if self.plot==True:
