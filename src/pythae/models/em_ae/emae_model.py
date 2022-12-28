@@ -188,7 +188,7 @@ class EMAE(AE):
                 tau_sum = tau[~missing_labels,:,None].sum(axis=0).detach().cpu()
                 self.mu = (tau[~missing_labels,:,None]*Z[~missing_labels,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
                 self.Sigma = (tau[~missing_labels,:,None] * (Z[~missing_labels,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
-        self.tau = self.tau.to(self.device)
+        self.tau = tau.to(self.device)
         self.mu = self.mu.to(self.device)
         self.Sigma = self.Sigma.to(self.device)
 
