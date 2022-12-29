@@ -290,7 +290,7 @@ class EMAE(AE):
     
         if self.beta>0 and self.temperature > self.temp_start:
             LLloss, sep_loss = self.likelihood_loss(z,y_missing)
-            loss = recon_loss + LLloss*self.beta*self.temperature
+            loss = recon_loss + LLloss*self.beta
             print(recon_loss.item(), embedding_loss.item(), LLloss.item(),loss.item())
             self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
             #self.ratio = 1
@@ -365,8 +365,8 @@ class EMAE(AE):
     
             missing_ratio = len(missing_labels)/len(tau)
             t0, t1 = self.temperature*(1-missing_ratio), (1 - self.temperature)*missing_ratio
-            self.mu = torch.nanmean(torch.stack((mu_0*t0,mu_1*t1),axis=2),axis=2)
-            self.Sigma = torch.nanmean(torch.stack((Sigma_0*t0,Sigma_1*t1),axis=2),axis=2)
+            self.mu = mu_0*t0 + mu_1*t1
+            self.Sigma = Sigma_0*t0 + Sigma_1*t1
             #set to device
             self.tau = tau.to(self.device)
             self.mu = self.mu.to(self.device)
@@ -377,10 +377,10 @@ class EMAE(AE):
         #elif self.ratio < 1:
         #    self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))
 
-        #if self.ratio > 1 and self.beta < 1:
-        #    self.beta = self.beta * (1.1)**(1-self.temperature)
-        #elif self.ratio < 1:
-        #    self.beta = self.beta * (1.1)**(-(1-self.temperature))
+        if self.ratio > 1 and self.beta < 1:
+            self.beta = self.beta * (1.1)**(1-self.temperature)
+        elif self.ratio < 1:
+            self.beta = self.beta * (1.1)**(-(1-self.temperature))
         print(f'beta is now {self.beta}')
 
         if self.plot==True:
