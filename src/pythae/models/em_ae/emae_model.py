@@ -18,21 +18,17 @@ import torch.nn.functional as F
 #from sklearn.cluster import KMeans
 class EMAE(AE):
     """Regularized Autoencoder with L2 decoder params regularization model.
-
     Args:
         model_config (RAE_L2_Config): The Autoencoder configuration setting the main parameters of the
             model.
-
         encoder (BaseEncoder): An instance of BaseEncoder (inheriting from `torch.nn.Module` which
             plays the role of encoder. This argument allows you to use your own neural networks
             architectures if desired. If None is provided, a simple Multi Layer Preception
             (https://en.wikipedia.org/wiki/Multilayer_perceptron) is used. Default: None.
-
         decoder (BaseDecoder): An instance of BaseDecoder (inheriting from `torch.nn.Module` which
             plays the role of decoder. This argument allows you to use your own neural networks
             architectures if desired. If None is provided, a simple Multi Layer Preception
             (https://en.wikipedia.org/wiki/Multilayer_perceptron) is used. Default: None.
-
     .. note::
         For high dimensional data we advice you to provide you own network architectures. With the
         provided MLP you may end up with a ``MemoryError``.
@@ -76,10 +72,8 @@ class EMAE(AE):
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
-
         Args:
             inputs (BaseDataset): An instance of pythae's datasets
-
         Returns:
             ModelOutput: An instance of ModelOutput containing all the relevant parameters
         """
@@ -266,10 +260,8 @@ class EMAE(AE):
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
-
         Args:
             inputs (BaseDataset): An instance of pythae's datasets
-
         Returns:
             ModelOutput: An instance of ModelOutput containing all the relevant parameters
         """
