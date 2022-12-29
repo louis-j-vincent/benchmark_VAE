@@ -290,7 +290,7 @@ class EMAE(AE):
     
         if self.beta>0 and self.temperature > self.temp_start:
             LLloss, sep_loss = self.likelihood_loss(z,y_missing)
-            loss = recon_loss + LLloss*self.beta*self.temperature
+            loss = recon_loss + LLloss*self.beta#*self.temperature
             print(recon_loss.item(), embedding_loss.item(), LLloss.item(),loss.item())
             self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
             #self.ratio = 1
@@ -373,10 +373,10 @@ class EMAE(AE):
             self.mu = self.mu.to(self.device)
             self.Sigma = self.Sigma.to(self.device)
 
-        #if self.ratio > 1 and self.beta < 1:
-        #    self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))
-        #elif self.ratio < 1:
-        #    self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))
+        if self.ratio > 1 and self.beta < 1:
+            self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))**(1-self.temperature)
+        elif self.ratio < 1:
+            self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))**(1-self.temperature)
 
         #if self.ratio > 1 and self.beta < 1:
         #    self.beta = self.beta * (1.1)**(1-self.temperature)
