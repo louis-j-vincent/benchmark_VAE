@@ -375,6 +375,10 @@ class EMAE(AE):
                 t0, t1 = self.temperature*(1-missing_ratio), (1 - self.temperature)*missing_ratio
                 
                 #t0,t1 = 1 - missing_ratio, missing_ratio
+                print('mu and sigma means')
+                print(mu_0*t0, mu_1*t1)
+                print(mu_0*t0, mu_1*t1)
+
                 self.mu = torch.nanmean(torch.stack((mu_0*t0,mu_1*t1),axis=2),axis=2)
                 self.Sigma = torch.nanmean(torch.stack((Sigma_0*t0,Sigma_1*t1),axis=2),axis=2)
 
