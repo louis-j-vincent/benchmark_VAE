@@ -365,7 +365,7 @@ class EMAE(AE):
     
             missing_ratio = len(missing_labels)/len(tau)
             t0, t1 = self.temperature*(1-missing_ratio), (1 - self.temperature)*missing_ratio
-            t0,t1 = 0.5,0.5
+            t0,t1 = 1 - missing_ratio, missing_ratio
             self.mu = torch.nanmean(torch.stack((mu_0*t0,mu_1*t1),axis=2),axis=2)
             self.Sigma = torch.nanmean(torch.stack((Sigma_0*t0,Sigma_1*t1),axis=2),axis=2)
             #set to device
