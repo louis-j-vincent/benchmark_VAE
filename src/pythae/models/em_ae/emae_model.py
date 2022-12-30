@@ -290,7 +290,9 @@ class EMAE(AE):
     
         if self.beta>0 and self.temperature > self.temp_start:
             LLloss, sep_loss = self.likelihood_loss(z,y_missing)
-            loss = recon_loss + LLloss*self.beta#*self.temperature
+            LLloss_true, sep_loss_true = self.likelihood_loss(z,y_missing,ll_with_missing_labels=False)
+
+            loss = recon_loss + (LLloss*self.temperature  + (1-self.temperature)*LLloss_true)*self.beta#
             print(recon_loss.item(), embedding_loss.item(), LLloss.item(),loss.item())
             self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
             #self.ratio = 1
@@ -308,18 +310,22 @@ class EMAE(AE):
 
         return output
 
-    def likelihood_loss(self, Z, y):
+    def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
 
-        #E-step
         tau = torch.clone(y[:,:self.K]).detach().cpu()
         missing_labels = torch.where(y[:,self.K:].sum(axis=1)>0)[0].detach().cpu()
-        Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
-        Sigma = self.Sigma[None,:,:] 
-        N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
-        log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
-        log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
-        tau[missing_labels] = torch.exp(log_tau[missing_labels])#
-
+        if ll_with_missing_labels:
+            #E-step
+            Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
+            Sigma = self.Sigma[None,:,:] 
+            N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
+            log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
+            log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
+            tau[missing_labels] = torch.exp(log_tau[missing_labels])#
+        else:
+            tau = torch.clone(y[:,:self.K]).detach().cpu()
+            Y = (Z[~missing_labels,None,:]-self.mu[None,:,:])
+            Sigma = self.Sigma[None,:,:] 
         tau = tau.to(self.device) 
 
         #get log prob
