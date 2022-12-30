@@ -336,7 +336,7 @@ class EMAE(AE):
             Z = self.Z
         if self.init==True:
             self.mu = torch.matmul(labels.T,Z)
-            self.alpha = labels.mean(axis=0) + (1/self.K)*(self.labels[:,self.K:].sum(axis=1).mean())
+            self.alpha = torch.nanmean(labels,axis=0) + (1/self.K)*(self.labels[:,self.K:].sum(axis=1).mean())
             self.init=False
         print('Updating parameters')
         for i in range(self.EM_steps):
