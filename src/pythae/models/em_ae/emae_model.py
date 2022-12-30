@@ -323,7 +323,7 @@ class EMAE(AE):
             log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
             tau[missing_labels] = torch.exp(log_tau[missing_labels])#
         else:
-            tau = torch.clone(y[:,:self.K]).detach().cpu()
+            tau = torch.clone(y[~missing_labels,:self.K]).detach().cpu()
             Y = (Z[~missing_labels,None,:]-self.mu[None,:,:])
             Sigma = self.Sigma[None,:,:] 
         tau = tau.to(self.device) 
@@ -360,7 +360,7 @@ class EMAE(AE):
                 tau[missing_labels] = torch.exp(log_tau[missing_labels]) 
                 tau = tau.detach().cpu()
 
-            if False:
+            if True:
 
                 #M-step
                 tau_sum_0 = tau[missing_labels,:,None].sum(axis=0).detach().cpu()
@@ -373,7 +373,8 @@ class EMAE(AE):
         
                 missing_ratio = len(missing_labels)/len(tau)
                 t0, t1 = self.temperature*(1-missing_ratio), (1 - self.temperature)*missing_ratio
-                t0,t1 = 1 - missing_ratio, missing_ratio
+                
+                #t0,t1 = 1 - missing_ratio, missing_ratio
                 self.mu = torch.nanmean(torch.stack((mu_0*t0,mu_1*t1),axis=2),axis=2)
                 self.Sigma = torch.nanmean(torch.stack((Sigma_0*t0,Sigma_1*t1),axis=2),axis=2)
 
