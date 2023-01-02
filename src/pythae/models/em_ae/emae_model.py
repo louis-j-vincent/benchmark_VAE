@@ -317,7 +317,7 @@ class EMAE(AE):
         """
         Loss to minimize variance within each cluster, maximize variance between the center of each cluster
         """
-        var_per_cluster = self.sigma.mean()
+        var_per_cluster = self.Sigma.mean()
         var_centers = torch.var(self.mu,dim=0).mean()
 
         return var_per_cluster/var_centers
