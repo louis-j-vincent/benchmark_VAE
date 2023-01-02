@@ -335,7 +335,7 @@ class EMAE(AE):
         separation_prob = N_prob.prod() #prod on K gaussians
 
         if len(prob) == 0:
-            return 0, 0
+            return torch.zeros(10), torch.tensor(0)
         else:
             return 1 - prob.mean(), separation_prob
 
