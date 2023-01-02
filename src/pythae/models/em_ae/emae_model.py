@@ -69,6 +69,7 @@ class EMAE(AE):
         self.print_tau = True
         self.use_missing_labels = False
         self.EM_steps = 10
+        self.gamma = 1
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
@@ -293,7 +294,9 @@ class EMAE(AE):
             LLloss_true, sep_loss_true = self.likelihood_loss(z,y_missing,ll_with_missing_labels=False)
 
             loss = recon_loss + (LLloss*self.temperature  + (1-self.temperature)*LLloss_true)*self.beta*self.temperature
-            print(recon_loss.item(), embedding_loss.item(), LLloss.item(),loss.item())
+            var_loss = self.inter_outer_variance_loss()
+            loss += var_loss*self.gamma
+            print(recon_loss.item(), embedding_loss.item(), LLloss.item(),var_loss.item(),loss.item())
             self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
             #self.ratio = 1
         else:
@@ -309,6 +312,15 @@ class EMAE(AE):
         )
 
         return output
+
+    def inter_outer_variance_loss(self):
+        """
+        Loss to minimize variance within each cluster, maximize variance between the center of each cluster
+        """
+        var_per_cluster = self.sigma.mean()
+        var_centers = torch.var(self.mu,dim=0).mean()
+
+        return var_per_cluster/var_centers
 
     def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
 
