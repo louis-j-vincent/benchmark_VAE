@@ -50,7 +50,7 @@ class EMAE(AE):
         self.temperature = 0
         self.Z, self.labels = None, None
         self.variationnal = True
-        self.K = 10 #nb of Gaussians
+        self.K = model_config.K #nb of Gaussians
         device = "cuda" if torch.cuda.is_available() else "cpu"
         #self.mu = torch.rand((self.K,model_config.latent_dim)).to(device)
         self.mu = torch.zeros((self.K,model_config.latent_dim)).to(device)
