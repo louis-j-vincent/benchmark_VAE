@@ -334,8 +334,8 @@ class EMAE(AE):
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
 
-        if torch.isnan(prob):
-            return torch.zeros(10), torch.tensor(0)
+        if torch.isnan(prob): ##check
+            return torch.zeros(10).to(self.device), torch.tensor(0).to(self.device)
         else:
             return 1 - prob.mean(), separation_prob
 
