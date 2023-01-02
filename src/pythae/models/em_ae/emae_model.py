@@ -70,6 +70,7 @@ class EMAE(AE):
         self.use_missing_labels = False
         self.EM_steps = 10
         self.gamma = 1
+        self.epoch = 0
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
@@ -290,21 +291,26 @@ class EMAE(AE):
         loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
     
         if self.beta>0 and self.temperature > self.temp_start:
-            LLloss, sep_loss = self.likelihood_loss(z,y_missing)
-            LLloss_true, sep_loss_true = self.likelihood_loss(z,y_missing,ll_with_missing_labels=False)
+            LLloss, var_loss_all = self.likelihood_loss(z,y_missing)
+            LLloss_true, var_loss = self.likelihood_loss(z,y_missing,ll_with_missing_labels=False)
 
             loss = recon_loss + (LLloss*self.temperature  + (1-self.temperature)*LLloss_true)*self.beta*self.temperature
-            var_loss = self.inter_outer_variance_loss()
-            loss += var_loss*self.gamma
-            print(recon_loss.item(), embedding_loss.item(), LLloss.item(),var_loss.item(),loss.item())
+            loss = loss.mean()
+            #var_loss = self.inter_outer_variance_loss(z)
+            loss += var_loss*self.gamma*self.temperature
+            final_loss = recon_loss + LLloss*self.temperature
+            print(self.epoch,recon_loss.item(), embedding_loss.item(), LLloss.item(),var_loss.item(),loss.item())
             self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
             #self.ratio = 1
         else:
             loss = recon_loss
+            final_loss = loss
             self.ratio = self.beta
 
+        BIAS = min(10,1./(self.temperature + 0.0001))#bias so i won't keep first iterations of model !
+
         output = ModelOutput(
-            loss=recon_loss + LLloss*self.temperature,
+            loss=loss*BIAS,
             recon_loss=recon_loss,
             embedding_loss=embedding_loss,
             recon_x=recon_x,
@@ -313,12 +319,17 @@ class EMAE(AE):
 
         return output
 
-    def inter_outer_variance_loss(self):
+    def inter_outer_variance_loss(self, Z):
         """
         Loss to minimize variance within each cluster, maximize variance between the center of each cluster
         """
-        var_per_cluster = self.Sigma.mean()
-        var_centers = torch.var(self.mu,dim=0).mean()
+
+        tau_sum = self.tau[:,:,None].sum(axis=0).detach().cpu()
+        mu = (self.tau[:,:,None]*Z[:,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
+        Sigma = (self.tau[:,:,None] * (Z[:,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
+        
+        var_per_cluster = Sigma.mean()
+        var_centers = torch.var(mu,dim=0).mean()
 
         return var_per_cluster/var_centers
 
@@ -334,10 +345,12 @@ class EMAE(AE):
             log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
             log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
             tau[missing_labels] = torch.exp(log_tau[missing_labels])#
+            Z_ = Z
         else:
             tau = torch.clone(y[~missing_labels,:self.K]).detach().cpu()
             Y = (Z[~missing_labels,None,:]-self.mu[None,:,:])
             Sigma = self.Sigma[None,:,:] 
+            Z_ = Z[~missing_labels]
         tau = tau.to(self.device) 
 
         #get log prob
@@ -345,6 +358,20 @@ class EMAE(AE):
         N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
+        
+        tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
+        mu = (tau[:,:,None]*Z_[:,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
+        Sigma = (tau[:,:,None] * (Z_[:,None,:].detach().cpu()-mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
+        
+        var_per_cluster = torch.nanmean(Sigma)
+        var_centers = torch.nanmean(torch.var(Z,dim=0))
+        #var_centers = torch.nanmean(torch.var(mu,dim=0))
+        #var_centers = torch.var(mu)
+
+        print(var_per_cluster,var_centers,'means')
+
+
+        separation_prob = var_per_cluster#/var_centers
 
         if torch.isnan(prob): ##check
             return torch.zeros(10).to(self.device), torch.tensor(0).to(self.device)
