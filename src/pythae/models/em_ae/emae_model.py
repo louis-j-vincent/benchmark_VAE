@@ -292,7 +292,7 @@ class EMAE(AE):
             LLloss, sep_loss = self.likelihood_loss(z,y_missing)
             LLloss_true, sep_loss_true = self.likelihood_loss(z,y_missing,ll_with_missing_labels=False)
 
-            loss = recon_loss + (LLloss*self.temperature  + (1-self.temperature)*LLloss_true)*self.beta#
+            loss = recon_loss + (LLloss*self.temperature  + (1-self.temperature)*LLloss_true)*self.beta*self.temperature
             print(recon_loss.item(), embedding_loss.item(), LLloss.item(),loss.item())
             self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
             #self.ratio = 1
@@ -301,7 +301,7 @@ class EMAE(AE):
             self.ratio = self.beta
 
         output = ModelOutput(
-            loss=loss,
+            loss=recon_loss + LLloss*self.temperature,
             recon_loss=recon_loss,
             embedding_loss=embedding_loss,
             recon_x=recon_x,
@@ -334,7 +334,10 @@ class EMAE(AE):
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
 
-        return 1 - prob.mean(), separation_prob
+        if len(prob) == 0:
+            return 0, 0
+        else:
+            return 1 - prob.mean(), separation_prob
 
     def update_parameters(self,Z=None):
         labels = self.labels[:,:self.K]
@@ -360,7 +363,7 @@ class EMAE(AE):
                 tau[missing_labels] = torch.exp(log_tau[missing_labels]) 
                 tau = tau.detach().cpu()
 
-            if True:
+            if False:
 
                 #M-step
                 tau_sum_0 = tau[missing_labels,:,None].sum(axis=0).detach().cpu()
@@ -394,10 +397,10 @@ class EMAE(AE):
             self.mu = self.mu.to(self.device)
             self.Sigma = self.Sigma.to(self.device)
 
-        if self.ratio > 1 and self.beta < 1:
-            self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))**(1-self.temperature)
-        elif self.ratio < 1:
-            self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))**(1-self.temperature)
+        #if self.ratio > 1 and self.beta < 1:
+        #    self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))**(1-self.temperature)
+        #elif self.ratio < 1:
+        #    self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))**(1-self.temperature)
 
         #if self.ratio > 1 and self.beta < 1:
         #    self.beta = self.beta * (1.1)**(1-self.temperature)
