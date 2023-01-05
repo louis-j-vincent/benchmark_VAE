@@ -275,7 +275,7 @@ class EMAE(AE):
         z = self.encoder(x).embedding
         if self.variationnal:
             ratio = ((self.quantile)/(1.96 + torch.abs(z - y@self.mu)))**2
-            sigma_small_max = torch.maximum((y@self.Sigma**0.5)*ratio,torch.tensor(0.001))
+            sigma_small_max = torch.fmax((y@self.Sigma**0.5)*ratio,torch.tensor(0.001))
             z_var = z + torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
         else:
             z_var = z
@@ -359,9 +359,9 @@ class EMAE(AE):
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
         
-        tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
-        mu = (tau[:,:,None]*Z_[:,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
-        Sigma = (tau[:,:,None] * (Z_[:,None,:].detach().cpu()-mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
+        tau_sum = tau[:,:,None]#.sum(axis=0).detach().cpu()
+        mu = (tau[:,:,None]*Z_[:,None,:]).sum(axis=0)/tau_sum
+        Sigma = (tau[:,:,None] * (Z_[:,None,:]-mu[None,:,:])**2).sum(axis=0)/tau_sum
         
         var_per_cluster = torch.nanmean(Sigma)
         var_centers = torch.nanmean(torch.var(Z,dim=0))
