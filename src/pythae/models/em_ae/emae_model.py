@@ -377,9 +377,6 @@ class EMAE(AE):
         N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
-
-        plt.imshow(tau)
-        plt.show()
         
         tau_sum = torch.nansum(tau[:,:,None],axis=0)#.detach().cpu()
         mu = torch.nansum(tau[:,:,None]*Z[:,None,:],axis=0)/tau_sum
