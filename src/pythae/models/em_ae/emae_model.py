@@ -54,6 +54,7 @@ class EMAE(AE):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         #self.mu = torch.rand((self.K,model_config.latent_dim)).to(device)
         self.mu = torch.zeros((self.K,model_config.latent_dim)).to(device)
+        print('self.K is ',self.K)
         for k in range(self.K):
             self.mu[k,k] = 1.
         self.init = True
@@ -241,7 +242,7 @@ class EMAE(AE):
         ax.plot(trace[:,0], trace[:,1], c=c, alpha=alpha, linewidth=3)
 
         return ax 
-
+    
     def loss_function(self, recon_x, x, z):
 
         recon_loss = F.mse_loss(
@@ -270,7 +271,7 @@ class EMAE(AE):
 
         x = inputs["data"]
         y_missing = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K*2).float().to(self.device)
-        y = y_missing[:,:self.K]
+        y = torch.clone(y_missing[:,:self.K])
 
         z = self.encoder(x).embedding
         if self.variationnal:
@@ -307,10 +308,11 @@ class EMAE(AE):
             final_loss = loss
             self.ratio = self.beta
 
-        BIAS = min(10,1./(self.temperature + 0.0001))#bias so i won't keep first iterations of model !
+        BIAS = min(2,1./(self.temperature + 0.0001))#bias so i won't keep first iterations of model !
+        print(BIAS)
 
         output = ModelOutput(
-            loss=loss*BIAS,
+            loss=loss, #*BIAS
             recon_loss=recon_loss,
             embedding_loss=embedding_loss,
             recon_x=recon_x,
@@ -333,47 +335,68 @@ class EMAE(AE):
 
         return var_per_cluster/var_centers
 
-    def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
+    def compute_tau(self, Z, y, ll_with_missing_labels = True):
+        """
+        Compute probability for each point to be a aprt of each gaussian
+        """
 
         tau = torch.clone(y[:,:self.K]).detach().cpu()
         missing_labels = torch.where(y[:,self.K:].sum(axis=1)>0)[0].detach().cpu()
-        if ll_with_missing_labels:
-            #E-step
-            Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
-            Sigma = self.Sigma[None,:,:] 
-            N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
-            log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
-            log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
-            tau[missing_labels] = torch.exp(log_tau[missing_labels])#
-            Z_ = Z
-        else:
-            tau = torch.clone(y[~missing_labels,:self.K]).detach().cpu()
-            Y = (Z[~missing_labels,None,:]-self.mu[None,:,:])
-            Sigma = self.Sigma[None,:,:] 
-            Z_ = Z[~missing_labels]
+
+        #E-step
+        Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
+        Sigma = self.Sigma[None,:,:] 
+        N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
+        log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
+        log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
+        tau[missing_labels] = torch.exp(log_tau[missing_labels])#
         tau = tau.to(self.device) 
 
+        return tau
+
+    def likelihood_loss(self, Z_, y_, ll_with_missing_labels = True):
+
+        if ll_with_missing_labels:
+            tau = self.compute_tau(Z_, y_, ll_with_missing_labels)
+            Y = (Z_[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
+            Z = torch.clone(Z_)
+            #print('with missing labels')
+        else:
+            missing_labels = torch.where(y_[:,self.K:].sum(axis=1)>0)[0].detach().cpu()
+            NOT_missing_labels = torch.where(y_[:,self.K:].sum(axis=1)==0)[0].detach().cpu()
+            tau = torch.clone(y_[NOT_missing_labels,:self.K]).detach().cpu().to(self.device) 
+            Y = (Z_[NOT_missing_labels,None,:]-self.mu[None,:,:])
+            Z = torch.clone(Z_[NOT_missing_labels])
+            #print('without missing labels', len(missing_labels), 'len of missing labels')
+
+        #print(tau.sum(axis=1),'tau sum')
+
         #get log prob
+        Sigma = self.Sigma[None,:,:] 
         N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
         N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
         prob = N_prob.mean()
         separation_prob = N_prob.prod() #prod on K gaussians
+
+        plt.imshow(tau)
+        plt.show()
         
-        tau_sum = tau[:,:,None]#.sum(axis=0).detach().cpu()
-        mu = (tau[:,:,None]*Z_[:,None,:]).sum(axis=0)/tau_sum
-        Sigma = (tau[:,:,None] * (Z_[:,None,:]-mu[None,:,:])**2).sum(axis=0)/tau_sum
+        tau_sum = torch.nansum(tau[:,:,None],axis=0)#.detach().cpu()
+        mu = torch.nansum(tau[:,:,None]*Z[:,None,:],axis=0)/tau_sum
+        Sigma = torch.nansum(tau[:,:,None] * (Z[:,None,:]-mu[None,:,:])**2,axis=0)/tau_sum
         
         var_per_cluster = torch.nanmean(Sigma)
         var_centers = torch.nanmean(torch.var(Z,dim=0))
         #var_centers = torch.nanmean(torch.var(mu,dim=0))
         #var_centers = torch.var(mu)
-
+        #print('tau sum mean', tau_sum.mean(), Z_.mean(), Z.mean(), mu.mean())
         print(var_per_cluster,var_centers,'means')
 
 
         separation_prob = var_per_cluster#/var_centers
 
         if torch.isnan(prob): ##check
+            print('Prob is nan')
             return torch.zeros(10).to(self.device), torch.tensor(0).to(self.device)
         else:
             return 1 - prob.mean(), separation_prob
