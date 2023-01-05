@@ -393,8 +393,8 @@ class EMAE(AE):
         separation_prob = var_per_cluster#/var_centers
 
         if torch.isnan(prob): ##check
-            print('Prob is nan')
-            return torch.zeros(10).to(self.device), torch.tensor(0).to(self.device)
+            print('Prob is nan with n missing labels:', len(missing_labels))
+            return torch.tensor(0).to(self.device), torch.tensor(0).to(self.device)
         else:
             return 1 - prob.mean(), separation_prob
 
