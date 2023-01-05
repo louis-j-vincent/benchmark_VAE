@@ -375,7 +375,7 @@ class EMAE(AE):
         Sigma = self.Sigma[None,:,:] 
         N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
         N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
-        prob = N_prob.mean()
+        prob = torch.nanmean(N_prob)
         separation_prob = N_prob.prod() #prod on K gaussians
         
         tau_sum = torch.nansum(tau[:,:,None],axis=0)#.detach().cpu()
@@ -393,7 +393,7 @@ class EMAE(AE):
         separation_prob = var_per_cluster#/var_centers
 
         if torch.isnan(prob): ##check
-            print('Prob is nan with n missing labels:', len(missing_labels))
+            print('Prob is nan')
             return torch.tensor(0).to(self.device), torch.tensor(0).to(self.device)
         else:
             return 1 - prob.mean(), separation_prob
