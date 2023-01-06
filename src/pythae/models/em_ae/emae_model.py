@@ -296,7 +296,7 @@ class EMAE(AE):
             LLloss_true, var_loss = self.likelihood_loss(z,y_missing,ll_with_missing_labels=False)
 
             loss = recon_loss + (LLloss*self.temperature  + (1-self.temperature)*LLloss_true)*self.beta*self.temperature
-            loss = loss.mean()
+            #loss = loss.mean()
             #var_loss = self.inter_outer_variance_loss(z)
             loss += var_loss*self.gamma*self.temperature
             final_loss = recon_loss + LLloss*self.temperature
@@ -309,10 +309,9 @@ class EMAE(AE):
             self.ratio = self.beta
 
         BIAS = min(2,1./(self.temperature + 0.0001))#bias so i won't keep first iterations of model !
-        print(BIAS)
 
         output = ModelOutput(
-            loss=loss, #*BIAS
+            loss=final_loss, #*BIAS
             recon_loss=recon_loss,
             embedding_loss=embedding_loss,
             recon_x=recon_x,
@@ -360,16 +359,14 @@ class EMAE(AE):
             tau = self.compute_tau(Z_, y_, ll_with_missing_labels)
             Y = (Z_[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
             Z = torch.clone(Z_)
-            #print('with missing labels')
+            print('with missing labels')
         else:
             missing_labels = torch.where(y_[:,self.K:].sum(axis=1)>0)[0].detach().cpu()
             NOT_missing_labels = torch.where(y_[:,self.K:].sum(axis=1)==0)[0].detach().cpu()
             tau = torch.clone(y_[NOT_missing_labels,:self.K]).detach().cpu().to(self.device) 
             Y = (Z_[NOT_missing_labels,None,:]-self.mu[None,:,:])
             Z = torch.clone(Z_[NOT_missing_labels])
-            #print('without missing labels', len(missing_labels), 'len of missing labels')
-
-        #print(tau.sum(axis=1),'tau sum')
+            print('without missing labels', len(NOT_missing_labels), 'len of NOT missing labels')
 
         #get log prob
         Sigma = self.Sigma[None,:,:] 
@@ -390,10 +387,10 @@ class EMAE(AE):
         print(var_per_cluster,var_centers,'means')
 
 
-        separation_prob = var_per_cluster#/var_centers
+        separation_prob = var_per_cluster/var_centers
 
         if torch.isnan(prob): ##check
-            print('Prob is nan')
+            print('Prob is nan', Y.mean(), Z.mean(), Z.shape)
             return torch.tensor(0).to(self.device), torch.tensor(0).to(self.device)
         else:
             return 1 - prob.mean(), separation_prob
