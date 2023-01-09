@@ -54,7 +54,6 @@ class EMAE(AE):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         #self.mu = torch.rand((self.K,model_config.latent_dim)).to(device)
         self.mu = torch.zeros((self.K,model_config.latent_dim)).to(device)
-        print('self.K is ',self.K)
         for k in range(self.K):
             self.mu[k,k] = 1.
         self.init = True
@@ -70,8 +69,156 @@ class EMAE(AE):
         self.print_tau = True
         self.use_missing_labels = False
         self.EM_steps = 10
-        self.gamma = 1
         self.epoch = 0
+
+    def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
+        """The input data is encoded and decoded
+        Args:
+            inputs (BaseDataset): An instance of pythae's datasets
+        Returns:
+            ModelOutput: An instance of ModelOutput containing all the relevant parameters
+        """
+
+        x = inputs["data"]
+        y_missing = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K+1).float().to(self.device)
+        y = y_missing[:,:self.K]
+        #print(y_missing.shape, 'y missingshape')
+        #print(x[0])
+        #print(y_missing[0:5])
+        #print('Missing')
+
+        z = self.encoder(x).embedding
+        if self.variationnal:
+            ratio = ((self.quantile)/(1.96 + torch.abs(z - y@self.mu)))**2
+            sigma_small_max = torch.maximum((y@self.Sigma**0.5)*ratio,torch.tensor(0.001))
+            z_var = z + torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
+        else:
+            z_var = z
+
+        if self.Z is None:
+            self.Z = z
+            self.labels = y_missing
+        else:
+            self.Z = torch.cat((self.Z, z),0)
+            self.labels = torch.cat((self.labels, y_missing),0)
+        recon_x = self.decoder(z_var)["reconstruction"]
+
+        loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
+    
+        if self.beta>0 and self.temperature > self.temp_start:
+            LLloss, sep_loss = self.likelihood_loss(z,y)
+            loss = recon_loss + LLloss*self.beta
+            print(recon_loss.item(), embedding_loss.item(), LLloss.item(),loss.item())
+            self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
+        else:
+            loss = recon_loss
+            self.ratio = self.beta
+
+        output = ModelOutput(
+            loss=loss,
+            recon_loss=recon_loss,
+            embedding_loss=embedding_loss,
+            recon_x=recon_x,
+            z=z,
+        )
+
+        return output
+
+    def likelihood_loss(self, Z, y):
+
+        #E-step
+        tau = torch.clone(y).detach().cpu()
+        missing_labels = torch.where(y[:,-1]==1)[0].detach().cpu()
+        Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
+        Sigma = self.Sigma[None,:,:] 
+        N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
+        log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
+        log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
+        tau[missing_labels] = torch.exp(log_tau[missing_labels])#
+        tau = tau.to(self.device) 
+
+        #get log prob
+        N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
+        N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
+        print(N_prob.mean().item(),(torch.exp(N_log_prob)[~missing_labels] * tau[~missing_labels,:self.K,None]).sum(axis=1).mean().item(),'mean on missing and non missing')           
+        prob = N_prob.mean()
+        separation_prob = N_prob.prod() #prod on K gaussians
+
+        return 1 - prob.mean(), separation_prob
+
+    def update_parameters(self,Z=None):
+        labels = self.labels[:,:self.K]
+        if Z is None:
+            Z = self.Z
+        if self.init==True:
+            self.mu = torch.matmul(labels.T,Z)
+            self.alpha = labels.mean(axis=0) + (1/self.K)*(self.labels[:,-1].mean())
+            self.init=False
+        print('Updating parameters')
+        for i in range(self.EM_steps):
+
+            #E-step
+            tau = torch.clone(labels).detach().cpu()
+            #print(tau.mean())
+            ## add this to complete missing values
+            if self.infer == True:
+                missing_labels = torch.where(self.labels[:,-1]==1)[0].detach().cpu()
+                Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
+                Sigma = self.Sigma[None,:,:] 
+                N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
+                log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
+                log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
+                tau[missing_labels] = torch.exp(log_tau[missing_labels]) 
+
+                #plt.scatter(torch.exp(log_tau[~missing_labels]).detach().cpu(),tau[~missing_labels].detach().cpu());
+                #plt.show();
+                print('Mean diff between tau and truth')
+                print((torch.exp(log_tau[~missing_labels]).detach().cpu() - tau[~missing_labels].detach().cpu()).mean().item())
+                tau = tau.detach().cpu()
+                if self.print_tau:
+                    print(tau.mean(axis=0))
+                    print(tau.mean(axis=1))
+                    print(tau[missing_labels].mean(axis=0))
+                    print(tau[missing_labels].mean(axis=1))
+
+            # M-step
+            if self.use_missing_labels:
+                tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
+                self.mu = (tau[:,:,None]*Z[:,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
+                self.Sigma = (tau[:,:,None] * (Z[:,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
+            else:
+                tau_sum = tau[~missing_labels,:,None].sum(axis=0).detach().cpu()
+                self.mu = (tau[~missing_labels,:,None]*Z[~missing_labels,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
+                self.Sigma = (tau[~missing_labels,:,None] * (Z[~missing_labels,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
+        
+            self.tau = tau.to(self.device)
+            self.mu = self.mu.to(self.device)
+            self.Sigma = self.Sigma.to(self.device)
+
+        #ratio = self.recon_loss/self.ll_loss #*self.temperature
+        if self.ratio > 1 and self.beta < 1:
+            self.beta = self.beta * (1 + (self.epoch+1)**(-0.5))
+        elif self.ratio < 1:
+            self.beta = self.beta * (1 - (self.epoch+1)**(-0.5))
+        #print(f'beta is now {self.beta}, ratio was {ratio} with temp {self.temperature}')
+        #self.beta = self.ratio
+        print(f'beta is now {self.beta}')
+
+        if self.plot==True:
+            X = Z.detach().numpy()
+            pca = PCA(n_components=2)
+            X = pca.fit_transform(X)
+            fig, ax = plt.subplots(1,1,figsize=(18,8))
+            ax.scatter(X[:,0],X[:,1],c=torch.where(self.labels==1)[1].detach())
+            for i in range(self.K):
+                mu = (self.mu[i]@pca.components_.T).detach().numpy()
+                Sigma = (pca.components_@torch.diag(self.Sigma[i]).detach().numpy()@pca.components_.T)
+                ax = self.draw_95_ellipse(mu, Sigma, alpha = float(self.alpha[i].detach()), ax=ax)
+            fig.savefig(f'plot{self.epoch}.png')
+        self.Z = None
+        self.hist['mu'] = torch.vstack([self.hist['mu'],self.mu])
+        self.hist['Sigma'] = torch.vstack([self.hist['Sigma'],self.Sigma])
+        self.hist['beta'] += [self.beta]
 
     def detach_parameters(self):
         self.Z = self.Z.detach().clone()
@@ -93,68 +240,6 @@ class EMAE(AE):
         ax.plot(trace[:,0], trace[:,1], c=c, alpha=alpha, linewidth=3)
 
         return ax 
-    
-#new functions for debugging
-
-    def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
-        """The input data is encoded and decoded
-        Args:
-            inputs (BaseDataset): An instance of pythae's datasets
-        Returns:
-            ModelOutput: An instance of ModelOutput containing all the relevant parameters
-        """
-
-        x = inputs["data"]
-        y_missing = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K*3).float().to(self.device) #3 to overshoot if there are many classes
-        y = torch.clone(y_missing[:,:self.K])
-
-        z = self.encoder(x).embedding
-        if self.variationnal:
-            ratio = ((self.quantile)/(1.96 + torch.abs(z - y@self.mu)))**2
-            sigma_small_max = torch.fmax((y@self.Sigma**0.5)*ratio,torch.tensor(0.001))
-            z_var = z + torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
-        else:
-            z_var = z
-
-        if self.Z is None:
-            self.Z = z
-            self.labels = y_missing
-        else:
-            self.Z = torch.cat((self.Z, z),0)
-            self.labels = torch.cat((self.labels, y_missing),0)
-        recon_x = self.decoder(z_var)["reconstruction"]
-
-        loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
-    
-        if self.beta>0 and self.temperature > self.temp_start:
-            LLloss, var_loss_all = self.likelihood_loss(z,y_missing)
-            LLloss_true, var_loss = self.likelihood_loss(z,y_missing,ll_with_missing_labels=False)
-
-            loss = recon_loss + (LLloss*self.temperature  + (1-self.temperature)*LLloss_true)*self.beta*self.temperature
-            #loss = loss.mean()
-            #var_loss = self.inter_outer_variance_loss(z)
-            loss += var_loss*self.gamma*self.temperature
-            final_loss = recon_loss + LLloss*self.temperature
-            print(self.epoch)
-            print(recon_loss.item(), embedding_loss.item(), LLloss.item(),var_loss.item(),loss.item())
-            self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
-            #self.ratio = 1
-        else:
-            loss = recon_loss
-            final_loss = loss
-            self.ratio = self.beta
-
-        BIAS = min(2,1./(self.temperature + 0.0001))#bias so i won't keep first iterations of model !
-
-        output = ModelOutput(
-            loss=final_loss, #*BIAS
-            recon_loss=recon_loss,
-            embedding_loss=embedding_loss,
-            recon_x=recon_x,
-            z=z,
-        )
-
-        return output
 
     def loss_function(self, recon_x, x, z):
 
@@ -172,39 +257,59 @@ class EMAE(AE):
             (embedding_loss).mean(dim=0),
         )
 
+#new functions for debugging
 
-    def inter_outer_variance_loss(self, Z):
-        """
-        Loss to minimize variance within each cluster, maximize variance between the center of each cluster
-        """
-
-        tau_sum = self.tau[:,:,None].sum(axis=0).detach().cpu()
-        mu = (self.tau[:,:,None]*Z[:,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
-        Sigma = (self.tau[:,:,None] * (Z[:,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
-        
-        var_per_cluster = Sigma.mean()
-        var_centers = torch.var(mu,dim=0).mean()
-
-        return var_per_cluster/var_centers
-
-    def compute_tau(self, Z, y, ll_with_missing_labels = True):
-        """
-        Compute probability for each point to be a aprt of each gaussian
+    def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
+        """The input data is encoded and decoded
+        Args:
+            inputs (BaseDataset): An instance of pythae's datasets
+        Returns:
+            ModelOutput: An instance of ModelOutput containing all the relevant parameters
         """
 
-        tau = torch.clone(y[:,:self.K]).detach().cpu()
-        missing_labels = torch.where(y[:,self.K:].sum(axis=1)>0)[0].detach().cpu()
+        x = inputs["data"]
+        y_missing = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K*3).float().to(self.device) #if K is lower than 10 in experiments
+        y = y_missing[:,:self.K]
 
-        #E-step
-        Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
-        Sigma = self.Sigma[None,:,:] 
-        N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*torch.pi*Sigma) )#.detach().cpu()
-        log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
-        log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None]).detach().cpu()
-        tau[missing_labels] = torch.exp(log_tau[missing_labels])#
-        tau = tau.to(self.device) 
+        z = self.encoder(x).embedding
+        if self.variationnal:
+            ratio = ((self.quantile)/(1.96 + torch.abs(z - y@self.mu)))**2
+            sigma_small_max = torch.maximum((y@self.Sigma**0.5)*ratio,torch.tensor(0.001))
+            z_var = z + torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
+        else:
+            z_var = z
 
-        return tau
+        if self.Z is None:
+            self.Z = z
+            self.labels = y_missing
+        else:
+            self.Z = torch.cat((self.Z, z),0)
+            self.labels = torch.cat((self.labels, y_missing),0)
+        recon_x = self.decoder(z_var)["reconstruction"]
+
+        loss, recon_loss, embedding_loss = self.loss_function(recon_x, x, z)
+    
+        if self.beta>0 and self.temperature > self.temp_start:
+            LLloss, sep_loss = self.likelihood_loss(z,y_missing)
+            LLloss_true, sep_loss_true = self.likelihood_loss(z,y_missing,ll_with_missing_labels=False)
+
+            loss = recon_loss + (LLloss*self.temperature  + (1-self.temperature)*LLloss_true)*self.beta*self.temperature
+            print(recon_loss.item(), embedding_loss.item(), LLloss.item(),loss.item())
+            self.ratio = (LLloss/recon_loss).detach().cpu().numpy().item()
+            #self.ratio = 1
+        else:
+            loss = recon_loss
+            self.ratio = self.beta
+
+        output = ModelOutput(
+            loss=recon_loss + LLloss*self.temperature,
+            recon_loss=recon_loss,
+            embedding_loss=embedding_loss,
+            recon_x=recon_x,
+            z=z,
+        )
+
+        return output
 
     def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
 
