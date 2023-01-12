@@ -189,7 +189,7 @@ class EMAE(AE):
             tau[missing_labels] = torch.exp(log_tau[missing_labels])#
         #tau = tau.to(self.device) 
 
-        return tau
+        return tau #
 
     def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
         """
