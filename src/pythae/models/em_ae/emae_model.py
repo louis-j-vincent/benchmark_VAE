@@ -68,6 +68,7 @@ class EMAE(AE):
         self.gamma = 1
         self.epoch = 0
         self.tempered_EM = False
+        self.deterministic_EM = True
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
@@ -253,7 +254,15 @@ class EMAE(AE):
             tau = tau.detach().cpu()
 
             #M-step
-            if self.tempered_EM:
+            if self.deterministic_EM: #EM only on observed variables
+
+                tau_sum_1 = tau[~missing_labels,:,None].sum(axis=0).detach().cpu()
+                mu_1 = (tau[~missing_labels,:,None]*Z[~missing_labels,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum_1
+                Sigma_1 = (tau[~missing_labels,:,None] * (Z[~missing_labels,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum_1
+        
+                self.mu = mu_1
+                self.Sigma = Sigma_1
+            elif self.tempered_EM:
 
                 tau_sum_0 = tau[missing_labels,:,None].sum(axis=0).detach().cpu()
                 mu_0 = (tau[missing_labels,:,None]*Z[missing_labels,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum_0
@@ -268,7 +277,6 @@ class EMAE(AE):
 
                 self.mu = torch.nanmean(torch.stack((mu_0*t0,mu_1*t1),axis=2),axis=2)
                 self.Sigma = torch.nanmean(torch.stack((Sigma_0*t0,Sigma_1*t1),axis=2),axis=2)
-
             else:
 
                 tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
