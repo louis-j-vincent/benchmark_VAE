@@ -111,12 +111,14 @@ class EMAE(AE):
 
             LLloss_tempered = (LLloss*self.temperature  + (1-self.temperature)*LLloss_true)*self.temperature
             
-            loss = recon_loss + LLloss_tempered*self.beta + var_loss_true*self.gamma
+            loss = recon_loss + LLloss_tempered*self.beta #+ var_loss_true*self.gamma
             #print to observe evolution of different losses
             print(f'Losses: e{self.epoch} - recon {recon_loss.item()} - embedding {embedding_loss.item()} LLoss_total {LLloss.item()} LLosstrue {LLloss_true.item()} varlosstrue {var_loss_true.item()} total_loss {loss.item()}')
             
         else:
             loss = recon_loss
+
+        loss += F.mse_loss(x,z)
 
         #BIAS = max(1,3 - 2**(self.temperature+0.5)) #bias so i won't keep first iterations of model ! - decreases from approx 1.5 to 1
         output = ModelOutput(
@@ -200,7 +202,7 @@ class EMAE(AE):
 
         tau = torch.clone(y[:,:self.K])#.detach().cpu()
         missing_labels = torch.where(y[:,self.K:].sum(axis=1)>0)[0]#.detach().cpu()
-        if ll_with_missing_labels:
+        if ll_with_missing_labels or len(missing_labels)==0:
             #E-step
             Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
             Sigma = self.Sigma[None,:,:] 
@@ -216,6 +218,7 @@ class EMAE(AE):
             Y = (Z[~missing_labels,None,:]-self.mu[None,:,:])
             Sigma = self.Sigma[None,:,:] 
             tau = tau.to(self.device)
+            print('tau',tau)
             #var_loss = self.inter_outer_variance_loss(Z[~missing_labels, :self.K], tau[:, :self.K])
             var_loss = self.tau_loss(Z[~missing_labels],y[~missing_labels,:self.K])
 
@@ -254,7 +257,7 @@ class EMAE(AE):
             tau = tau.detach().cpu()
 
             #M-step
-            if self.deterministic_EM: #EM only on observed variables
+            if self.deterministic_EM and len(missing_labels)>0: #EM only on observed variables
 
                 tau_sum_1 = tau[~missing_labels,:,None].sum(axis=0).detach().cpu()
                 mu_1 = (tau[~missing_labels,:,None]*Z[~missing_labels,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum_1
@@ -262,6 +265,14 @@ class EMAE(AE):
         
                 self.mu = mu_1
                 self.Sigma = Sigma_1
+
+            if self.deterministic_EM and len(missing_labels)==0: #EM only on observed variables
+
+                tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
+                self.mu = (tau[:,:,None]*Z[:,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
+                self.Sigma = (tau[:,:,None] * (Z[:,None,:].detach().cpu()-self.mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum
+        
+
             elif self.tempered_EM:
 
                 tau_sum_0 = tau[missing_labels,:,None].sum(axis=0).detach().cpu()
@@ -303,6 +314,8 @@ class EMAE(AE):
         self.hist['mu'] = torch.vstack([self.hist['mu'],self.mu])
         self.hist['Sigma'] = torch.vstack([self.hist['Sigma'],self.Sigma])
         self.hist['beta'] += [self.beta]
+
+        print('mu:',self.mu)
 
     def detach_parameters(self):
         self.Z = self.Z.detach().clone()

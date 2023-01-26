@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from pythae.models.nn import BaseDecoder, BaseDiscriminator, BaseEncoder, BaseMetric
+from ..nn import BaseDecoder, BaseDiscriminator, BaseEncoder, BaseMetric
 
 from ..base.base_utils import ModelOutput
 
@@ -17,12 +17,15 @@ class Encoder_AE_MLP(BaseEncoder):
 
         layers = nn.ModuleList()
 
-        layers.append(nn.Sequential(nn.Linear(np.prod(args.input_dim), 512), nn.ReLU()))
+        inter_layer = 64
+
+        layers.append(nn.Sequential(nn.Linear(np.prod(args.input_dim), inter_layer), nn.ReLU()))
+        #layers.append(nn.Sequential(nn.Linear(inter_layer, inter_layer), nn.ReLU()))
 
         self.layers = layers
         self.depth = len(layers)
 
-        self.embedding = nn.Linear(512, self.latent_dim)
+        self.embedding = nn.Linear(inter_layer, self.latent_dim)
 
     def forward(self, x, output_layer_levels: List[int] = None):
         output = ModelOutput()
@@ -167,13 +170,16 @@ class Decoder_AE_MLP(BaseDecoder):
         self.input_dim = args.input_dim
 
         # assert 0, np.prod(args.input_dim)
+        inter_layer = 64
 
         layers = nn.ModuleList()
 
-        layers.append(nn.Sequential(nn.Linear(args.latent_dim, 512), nn.ReLU()))
+        layers.append(nn.Sequential(nn.Linear(args.latent_dim, inter_layer), nn.ReLU()))
+        #layers.append(nn.Sequential(nn.Linear(inter_layer, inter_layer), nn.ReLU()))
+
 
         layers.append(
-            nn.Sequential(nn.Linear(512, int(np.prod(args.input_dim))), nn.Sigmoid())
+            nn.Sequential(nn.Linear(inter_layer, int(np.prod(args.input_dim))), nn.Sigmoid())
         )
 
         self.layers = layers

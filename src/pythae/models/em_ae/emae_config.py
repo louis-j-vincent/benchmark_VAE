@@ -18,4 +18,4 @@ class EMAE_Config(AEConfig):
 
     embedding_weight: float = 1e-4
     reg_weight: float = 1e-7
-    K = 10
+    K = 2
