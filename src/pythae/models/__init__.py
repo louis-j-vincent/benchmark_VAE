@@ -42,6 +42,9 @@ from .vamp import VAMP, VAMPConfig
 from .vq_vae import VQVAE, VQVAEConfig
 from .wae_mmd import WAE_MMD, WAE_MMD_Config
 from .em_ae import EMAE, EMAE_Config
+from .missing_ae import vAE, vAEConfig
+from .vemae import vEMAE, vEMAEConfig
+
 
 
 __all__ = [
@@ -100,5 +103,7 @@ __all__ = [
     "PIWAE",
     "PIWAEConfig",
     "EMAE", 
-    "EMAE_Config"
+    "EMAE_Config",
+    "vEMAE", 
+    "vEMAEConfig"
 ]
