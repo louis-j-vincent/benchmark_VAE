@@ -117,9 +117,7 @@ class EMAE(AE):
             
         else:
             loss = recon_loss
-
-        loss += F.mse_loss(x,z)
-
+            
         #BIAS = max(1,3 - 2**(self.temperature+0.5)) #bias so i won't keep first iterations of model ! - decreases from approx 1.5 to 1
         output = ModelOutput(
             loss=loss, 
