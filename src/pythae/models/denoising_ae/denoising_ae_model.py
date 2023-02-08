@@ -124,15 +124,11 @@ class denoising_AE(BaseAE):
 
         return xU, x_nU, u_nU
 
-    def corrupt_data(self,data):
+    def corrupt(self,data):
 
-        square_size = data.shape[-1]
-        center_coord = np.random.randint(0,square_size,(2,data.shape[0]))
-        square_size = np.repeat(np.random.randint(0,square_size//2,data.shape[0]).reshape(1,-1),2,axis=0)
-        upper_left_coord = np.minimum(np.maximum(center_coord - (square_size//2),0),square_size)
-        for i in range(data.shape[0]):
-            data[i,:,upper_left_coord[0,i]:upper_left_coord[0,i]+square_size[0,i],upper_left_coord[1,i]:upper_left_coord[1,i]+square_size[1,i]] = -10
-        return data
+        noise = torch.bernoulli(torch.ones(data.shape)*self.p) * torch.rand(data.shape)*torch.max(data)
+
+        return data + noise
 
     def loss_function(self, recon_x, x):
 
