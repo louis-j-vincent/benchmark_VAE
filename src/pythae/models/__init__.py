@@ -44,6 +44,8 @@ from .wae_mmd import WAE_MMD, WAE_MMD_Config
 from .em_ae import EMAE, EMAE_Config
 from .missing_ae import vAE, vAEConfig
 from .vemae import vEMAE, vEMAEConfig
+from .denoising_ae import denoising_AE, denoising_AEConfig
+
 
 
 
@@ -105,5 +107,7 @@ __all__ = [
     "EMAE", 
     "EMAE_Config",
     "vEMAE", 
-    "vEMAEConfig"
+    "vEMAEConfig",
+    "denoising_AE",
+    "denoising_AEConfig"
 ]
