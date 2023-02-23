@@ -14,4 +14,4 @@ class vEMAEConfig(BaseAEConfig):
         default_encoder (bool): Whether the encoder default. Default: True.
         default_decoder (bool): Whether the encoder default. Default: True.
     """
-    K = 3
+    K = 2
