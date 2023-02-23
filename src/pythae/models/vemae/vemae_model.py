@@ -17,7 +17,6 @@ from sklearn.cluster import KMeans
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d as GF1D
-from ..Rieman_metric.riemann_tools import Exponential_map
 
 
 class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
@@ -111,35 +110,6 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         self.M = []
         self.centroids = []
 
-    def G_inv(self,z):
-
-        self.T = 1 #added
-        self.lbd = 0
-
-        # convert to 1 big tensor
-        self.M_tens = torch.cat(self.M)
-        self.centroids_tens = torch.cat(self.centroids)
-
-        #print(self.centroids_tens.unsqueeze(0), z.unsqueeze(1))
-        
-        return (
-            self.M_tens.unsqueeze(0)
-            * torch.exp(
-                -torch.norm(
-                    self.centroids_tens.unsqueeze(0) - z.unsqueeze(1), dim=-1
-                )
-                ** 2
-                / (self.T ** 2)
-            )
-            .unsqueeze(-1)
-            .unsqueeze(-1)
-        ).sum(dim=1) + self.lbd * torch.eye(self.latent_dim).to(self.device)
-
-        #self.G = G
-        self.G_inv = G_inv
-        self.M = []
-        self.centroids = []
-
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
 
@@ -166,10 +136,6 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
             z_var = z + torch.normal(torch.zeros(z.shape).to(self.device),sigma_small_max).to(self.device)
         else:
             z_var = z
-
-        self.centroids.append(z.detach().to(self.device))
-        n_Ids, time = torch.eye(z.shape[-1]).repeat(z.shape[0],1,1), torch.tensor([i/1095 for i in range(z.shape[0])])
-        self.M.append( (n_Ids * time[:,None,None]).to(self.device) )
 
         ## NORMAL vAE step
 
@@ -554,3 +520,24 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
         return model_config
 
+    def set_vector_field(self):
+        z = self.Z
+        z = z.reshape(1095,-1,z.shape[-1])
+        delta_z = z[1:] - z[:-1]
+        self.v = (z[1:] - z[:-1]).reshape[-1,z.shape[-1]]
+        self.v_start = z.reshape[-1,z.shape[-1]]
+
+    def vector_kernel_dist(self, z1, z2):
+        """
+        Returns the kernel distance between z1 and z2 for vector field estimation
+        """
+        if z1.shape[0]==1:
+            z1 = z1.repeat(z2.shape[0])
+        return torch.exp(-torch.mean( (z1 - z2)**2, axis = -1))
+
+    def compute_vector(self,z):
+
+        v = self.vector_kernel_dist(z,self.v_start) * self.v
+
+
+    
