@@ -8,7 +8,7 @@ from ..base import BaseAE
 from ..base.base_utils import ModelOutput
 from ..nn import BaseDecoder, BaseEncoder
 from ..nn.default_architectures import Encoder_AE_MLP
-from .vemae_config import vEMAEConfig
+from .vfemae_config import vfEMAEConfig
 from torch import tensor, cat, exp, std
 import torch
 import numpy as np
@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d as GF1D
 
 
-class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
+class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
     """Vanilla Autoencoder model.
 
     Args:
@@ -43,14 +43,14 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
     def __init__(
         self,
-        model_config: vEMAEConfig,
+        model_config: vfEMAEConfig,
         encoder: Optional[BaseEncoder] = None,
         decoder: Optional[BaseDecoder] = None,
     ):
 
         BaseAE.__init__(self, model_config=model_config, encoder = encoder, decoder=decoder)
 
-        self.model_name = "vEMAE"
+        self.model_name = "vfEMAE"
 
         if encoder is None:
             if model_config.input_dim is None:
@@ -109,6 +109,7 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         ##Rieman
         self.M = []
         self.centroids = []
+        self.S = 1
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
@@ -125,7 +126,7 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
         n_repeats = self.n_repeats if self.training else 3
 
-        x = inputs["data"]
+        x, tempo = inputs["data"][:,1:], inputs['data'][:,0]
         z = self.encoder(x).embedding
         y_missing = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K*3).float().to(self.device) #3 to overshoot if there are many classes
         y = y_missing[:,:self.K]
@@ -162,15 +163,17 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         if self.Z is None: #this will be true at the beginning of each epoch
             self.Z = z
             self.labels = y_missing
+            self.tempo = tempo
         else:
             self.Z = torch.cat((self.Z, z),0)
             self.labels = torch.cat((self.labels, y_missing),0)
+            self.tempo = torch.cat((self.tempo, tempo),0)
 
         delta_Z = torch.abs(ZV_mu[1:] - ZV_mu[:-1])
         delta_X = torch.abs(X[1:] - X[:-1])**2 + 0.0001
         U = (X==-10)
         delta_U = (1 - U[1:]*U[:-1]*1) + 0.0001
-        temporal_loss = torch.abs( delta_Z.mean(axis=-1) * delta_U.sum(axis=-1) / (delta_X * delta_U).sum(axis=-1) ).mean()
+        temporal_loss = torch.abs( delta_Z.mean(axis=-1) * delta_U.sum(axis=-1) / (delta_X * delta_U).sum(axis=-1) ).mean() * (delta_X * delta_U).mean()
         # we divide (aka multiply here) by delta_U sum to get mean of delta_x * delta_U only where delta_U==1
         #print(temporal_loss)
 
@@ -187,7 +190,7 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         else:
             loss = recon_loss
         #print to observe evolution of different losses
-        loss += temporal_loss * self.temperature * self.gamma
+        loss += temporal_loss * self.gamma
         if self.print:
            print(f'Losses: e{self.epoch:.4f} - recon {recon_loss.item():.4f} - LLoss_total {LLloss.item():.4f} classif_loss {classif_loss.item():.4f} total_loss {loss.item():.4f}')
         output = ModelOutput(loss=recon_loss + self.beta*(LLloss + classif_loss) + temporal_loss*self.gamma, recon_x=XV_hat, z=Z)
@@ -216,6 +219,40 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         ).sum(dim=-1)
         return MSE.mean(dim=0)
 
+## compute likelihood loss
+
+    def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
+        """
+        Compute likelihood of gaussian Mixture Model by:
+        - computing tau (if we are using missing labels) which is the a posteriori probability for each point of being a part of each of hte K clusters
+        - computing the likelihood loss defined as sum_i sum_k tau_i,k * P(z_i sachant mu_k, Sigma_k)
+        """
+
+        tau = torch.clone(y[:,:self.K])#.detach().cpu()
+        missing_labels = (y[:,self.K:].sum(axis=1)>0)
+
+        #E-step
+        Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
+        Sigma = self.Sigma[None,:,:] + 0.0001
+        N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*np.pi*Sigma) )
+        log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
+        log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None])#.detach().cpu()
+
+        loss_classif = F.l1_loss( tau[~missing_labels], torch.exp(log_tau[~missing_labels]) ) * self.K
+
+        tau = torch.exp(log_tau)
+
+        #get log prob
+        N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*np.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
+        N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
+        prob = torch.mean(N_prob[N_prob==N_prob]) #nanmean walkaround
+
+        pk_prior = ((tau[missing_labels].mean(axis=0) - y[:,:self.K].mean(axis=0))**2 / 2 ).sum()
+
+        prob = prob - pk_prior
+
+        return 1 - prob.mean(), loss_classif
+
     def tau_loss(self,z,y):
         tau = self.compute_tau(z,y,replace_y=True)
         loss = F.l1_loss(tau,y)
@@ -242,62 +279,7 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
         return tau
 
-    def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
-        """
-        Compute likelihood of gaussian Mixture Model by:
-        - computing tau (if we are using missing labels) which is the a posteriori probability for each point of being a part of each of hte K clusters
-        - computing the likelihood loss defined as sum_i sum_k tau_i,k * P(z_i sachant mu_k, Sigma_k)
-        """
-
-        tau = torch.clone(y[:,:self.K])#.detach().cpu()
-        missing_labels = torch.where(y[:,self.K:].sum(axis=1)>0)[0]#.detach().cpu()
-        missing_labels = (y[:,self.K:].sum(axis=1)>0)
-
-        #E-step
-        Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
-        Sigma = self.Sigma[None,:,:] + 0.0001
-        N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*np.pi*Sigma) )
-        log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
-        log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None])#.detach().cpu()
-        with open('log.txt', 'w') as f:
-            f.write('y on non misssing labels \n')
-            f.write(str(tau[~missing_labels]))
-            f.write('tau on non misssing labels \n')
-            f.write(str(torch.exp(log_tau[~missing_labels])))
-
-        if sum(missing_labels*1)!=tau.shape[0]:
-            loss_classif = F.l1_loss( tau[~missing_labels], torch.exp(log_tau[~missing_labels]) )
-        else:
-            loss_classif = torch.tensor(1)
-
-        tau = torch.exp(log_tau)
-
-        #get log prob
-        N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*np.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
-        N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
-        prob = torch.mean(N_prob[N_prob==N_prob]) #nanmean walkaround
-
-        return 1 - prob.mean(), loss_classif
-
-    def M_step(self, tau, Z, mu_prior=None):
-
-        tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
-        mu = (tau[:,:,None]*Z[:,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
-        mu = tau.T@Z.detach().cpu() / tau_sum
-        Sigma = (tau[:,:,None] * (Z[:,None,:].detach().cpu()-mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum + 0.00001
-        #mu, Sigma = self.mu, self.Sigma
-        return mu, Sigma
-
-    def split_cluster(self, k, tau):
-        """
-        This function splits cluster k into 2 clusters, and adapts the mapping matrix
-        """
-        self.cluster_map = torch.cat([self.cluster_map[:k], self.cluster_map[k].unsqueeze(0), self.cluster_map[k:]], dim=0)
-        # init 2 new centers with a kmeans
-        kmeans = KMeans(n_clusters=2, random_state=0, n_init="auto").fit(self.Z[tau[:,k]>0.5])
-        self.mu = torch.cat([self.mu[:k], torch.tensor(kmeans.cluster_centers), self.mu[k+1:]], dim=0)
-        # init 2 new sigmas by dividing sigma of original group by 2
-        self.Sigma = torch.cat([self.Sigma[:k], torch.tensor([self.Sigma[k]/2, self.Sigma[k]/2]), self.Sigma[k+1:]], dim=0)
+## update parameters
 
     def update_parameters(self,Z=None):
         """
@@ -356,16 +338,6 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
                 self.mu[mu==mu] = mu[mu==mu] #replace when different from nan
                 self.Sigma[Sigma==Sigma] = Sigma[Sigma==Sigma] #replace when different from nan
 
-            ## hierarchical clustering, BUT ONLY 
-            mu_var = self.mu.std(axis=0)
-            for k in range(self.K):
-                if (self.Sigma[k] - mu_var**2).mean() > 0 and False:
-                    print('splitting')
-                    self.split_cluster(k, tau)
-                    self.K = self.K+1
-                    self.update_parameters(Z=Z)
-                    print('re updated parameters')
-
             #set to device
             self.tau = tau.to(self.device)
             self.mu = self.mu.to(self.device)
@@ -378,7 +350,8 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
             n = max(1,Z.shape[0]//M)
             X = Z.detach().numpy()
             pca = PCA(n_components=2)
-            X = pca.fit_transform(X)
+            pca.fit(X)
+            X = X@pca.components_.T
             fig, ax = plt.subplots(3,1,figsize=(18,8))
             sample = (self.labels[:,self.K:].sum(axis=-1)==0) #sample on non missing data points
             ax[0].scatter(X[sample,0],X[sample,1],c=torch.where(self.labels==1)[1][sample].detach(),alpha=0.8)
@@ -387,42 +360,78 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
             tau_sum = tau_sum/max(tau_sum)
             print('tau sum',tau_sum)
 
+
             for i in range(self.K):
                 mu = (self.mu[i]@pca.components_.T).detach().numpy()
                 Sigma = (pca.components_@torch.diag(self.Sigma[i]).detach().numpy()@pca.components_.T)
-
-                #color = np.zeros(3)
-                #color[i] = 1
                 ax[0] = self.draw_95_ellipse(mu, Sigma, alpha = tau_sum[i], ax=ax[0])
-                #ax[1] = self.draw_95_ellipse(mu, Sigma, alpha = 0.9, c = color, ax=ax[1])
 
-            j = 1095 #plot individual trajectories for patients
-            N = 30
-            ids = np.unique(np.where(self.labels[:,self.i_i50].detach().numpy()==1)[0]//j)
-            print(ids)
-            #print('****')
-            #print(self.labels.shape)
-            #print(self.labels[:,-4].detach().numpy())
-            #print(np.where(self.labels[:,-4].detach().numpy()==1))
-
-            #print(np.where(self.labels[:,-4].detach().numpy()==1)[0])
-            #print(ids)
-            #print(louis)
+            step = [0] + list(np.where(self.tempo.detach().numpy()==1)[0])
             for i in range(30):
-                y = self.labels[i*j:(i+1)*j,self.i_i50].detach().numpy()
-                y = GF1D(y,10)
+                y = self.labels[step[i]:step[i+1],self.i_i50].detach().numpy()
+                if len(y)>0:
+                    y = GF1D(y,10)
+                    if max(y)>0:
+                        y = y/max(y)
 
-                ax[1].plot(X[i*j:(i+1)*j,0],X[i*j:(i+1)*j,1],alpha=0.3)
-                ax[1].scatter(X[i*j:(i+1)*j,0],X[i*j:(i+1)*j,1],s=y*100,alpha=0.8)
+                    ax[1].plot(X[step[i]:step[i+1],0],X[step[i]:step[i+1],1],alpha=0.3)
+                    ax[1].scatter(X[step[i]:step[i+1],0],X[step[i]:step[i+1],1],c=y*50,alpha=0.8)
 
-            ax[2].imshow(tau[::73][:200].detach().numpy().T)
+            img = tau[::1][:200].detach().numpy().T
+            img[0] = (self.tempo==1)[:200]
+            ax[2].imshow(img)
 
             fig.suptitle(f'Scatterplot on 2d PCA at epoch {self.epoch}')
-            fig.savefig(f'plot{self.epoch}.png')
+            fig.savefig(f'plot{self.epoch:03d}.png')
+        
+        self.set_vector_field()
         self.Z = None
         self.hist['mu'] = torch.vstack([self.hist['mu'],self.mu])
         self.hist['Sigma'] = torch.vstack([self.hist['Sigma'],self.Sigma])
         self.hist['beta'] += [self.beta]
+
+    def M_step(self, tau, Z, mu_prior=None):
+
+        tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
+        #mu = (tau[:,:,None]*Z[:,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
+        mu = tau.T@Z.detach().cpu() / tau.sum(axis=0).reshape(-1,1).repeat(1,Z.shape[-1]).detach().cpu()
+        Sigma = (tau[:,:,None] * (Z[:,None,:].detach().cpu()-mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum + 0.00001
+        #mu, Sigma = self.mu, self.Sigma
+        return mu, Sigma
+
+## compute vector field
+
+    def set_vector_field(self):
+        """
+        Vector field when we have a defined structure like 1095 * n patient obs
+        """
+        z = self.Z
+        z = z.reshape(self.N,-1,z.shape[-1])
+        delta_z = z[1:] - z[:-1]
+        self.v = (z[1:] - z[:-1]).reshape(-1,z.shape[-1])
+        self.v_start = z[:-1].reshape(-1,z.shape[-1])
+
+    def set_vector_field(self):
+        """
+        Vector field when we have tempo describing how close we are to the end of a series of observations
+        """
+        z = self.Z
+        self.v = (z[1:] - z[:-1])[self.tempo[:-1]!=1]
+        self.v_start = z[:-1][self.tempo[:-1]!=1]
+
+    def vector_kernel_dist(self, z1, z2):
+        """
+        Returns the kernel distance between z1 and z2 for vector field estimation
+        """
+        if z1.shape[0]==1:
+            z1 = z1.repeat(z2.shape[0])
+        return torch.exp(-torch.mean( (z1[:,None,:] - z2[None,:,:])**2 / self.S , axis = -1))
+
+    def compute_vector(self,z):
+        v = self.vector_kernel_dist(z,self.v_start) @ self.v / self.vector_kernel_dist(z,self.v_start).sum(axis=1)[:,None]
+        return v
+
+## plot intermediate EM steps
 
     def draw_95_ellipse(self, mu, Sigma, c="black", alpha=1, ax=None):
         if len(Sigma.shape) == 1:
@@ -452,25 +461,6 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         model_config = vEMAEConfig.from_json_file(path_to_model_config)
 
         return model_config
-
-    def set_vector_field(self):
-        z = self.Z
-        z = z.reshape(1095,-1,z.shape[-1])
-        delta_z = z[1:] - z[:-1]
-        self.v = (z[1:] - z[:-1]).reshape[-1,z.shape[-1]]
-        self.v_start = z.reshape[-1,z.shape[-1]]
-
-    def vector_kernel_dist(self, z1, z2):
-        """
-        Returns the kernel distance between z1 and z2 for vector field estimation
-        """
-        if z1.shape[0]==1:
-            z1 = z1.repeat(z2.shape[0])
-        return torch.exp(-torch.mean( (z1 - z2)**2, axis = -1))
-
-    def compute_vector(self,z):
-
-        v = self.vector_kernel_dist(z,self.v_start) * self.v
 
 
     
