@@ -17,7 +17,6 @@ from sklearn.cluster import KMeans
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d as GF1D
-from ..Rieman_metric.riemann_tools import Exponential_map
 
 
 class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
@@ -79,7 +78,7 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         self.EM_steps = 10
         self.temperature = 0.01
         self.variationnal = True
-        self.quantile = torch.tensor(0.5)
+        self.quantile = torch.tensor(0.1)
         self.plot = False
         self.temp_start = -1
         self.use_missing_labels = False
@@ -278,46 +277,6 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         return tau
 
     def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
-        """ DEPRECATED
-        Compute likelihood of gaussian Mixture Model by:
-        - computing tau (if we are using missing labels) which is the a posteriori probability for each point of being a part of each of hte K clusters
-        - computing the likelihood loss defined as sum_i sum_k tau_i,k * P(z_i sachant mu_k, Sigma_k)
-        """
-
-        tau = torch.clone(y[:,:self.K])#.detach().cpu()
-        missing_labels = torch.where(y[:,self.K:].sum(axis=1)>0)[0]#.detach().cpu()
-
-        if ll_with_missing_labels or len(missing_labels)==0:
-            #E-step
-            Y = (Z[:,None,:]-self.mu[None,:,:]) #shape: n_obs, k_means, d_dims
-            Sigma = self.Sigma[None,:,:] 
-            N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*np.pi*Sigma) )
-            log_tau = torch.log(self.alpha+1e-5)+N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
-            log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None])#.detach().cpu()
-            tau[missing_labels] = torch.exp(log_tau[missing_labels])#
-            #tau = tau.to(self.device)
-
-        else:
-            tau = torch.clone(y[~missing_labels,:self.K]).detach().cpu()
-            Y = (Z[~missing_labels,None,:]-self.mu[None,:,:])
-            Sigma = self.Sigma[None,:,:] 
-            tau = tau.to(self.device)
-        tau[tau!=tau] = 0
-
-        #get log prob
-        N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*np.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
-        N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
-        prob = torch.mean(N_prob[N_prob==N_prob]) #nanmean walkaround
-        #force tau to have binary values
-        tau_dist = torch.abs(tau - tau**10).mean()
-        #print(tau)
-        #print(prob, tau_dist)
-        prob -= tau_dist
-
-
-        return 1 - prob.mean()
-
-    def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
         """
         Compute likelihood of gaussian Mixture Model by:
         - computing tau (if we are using missing labels) which is the a posteriori probability for each point of being a part of each of hte K clusters
@@ -367,9 +326,6 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
         mu = (tau[:,:,None]*Z[:,None,:].detach().cpu()).sum(axis=0).detach().cpu()/tau_sum
         mu = tau.T@Z.detach().cpu() / tau_sum
-        print(' ')
-        print(Z.shape,tau.shape,mu.shape, tau_sum.shape)
-        print('**')
         Sigma = (tau[:,:,None] * (Z[:,None,:].detach().cpu()-mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum + 0.00001
         #mu, Sigma = self.mu, self.Sigma
         return mu, Sigma
@@ -420,7 +376,6 @@ class vEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
             if self.deterministic_EM and len(missing_labels)>0: #EM only on observed variables
                 print('M step only on deterministic labels')
                 mu, Sigma = self.M_step(tau[~missing_labels], Z[~missing_labels], self.mu)
-                print(mu,Sigma)
                 self.mu[mu==mu] = mu[mu==mu] #replace when different from nan
                 self.Sigma[Sigma==Sigma] = Sigma[Sigma==Sigma] #replace when different from nan
 
