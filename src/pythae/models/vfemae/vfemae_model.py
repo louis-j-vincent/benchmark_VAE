@@ -142,6 +142,12 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         XV_hat = self.decoder(ZV_mu)["reconstruction"].reshape(ZV_mu.shape[0],x.shape[-1])
         #if XV_hat.shape != X.shape:
         #    XV_hat = torch.squeeze(XV_hat, 1) #if dimension added
+        plt.imshow(XV[:30].detach())
+        plt.show()
+        plt.imshow(XV_hat[:30].detach())
+        plt.show()
+        plt.imshow(ZV_mu[:30].detach())
+        plt.show()
 
         recon_loss = self.loss_function(XV_hat[(X!=-10)], X[(X!=-10)]) * 100
         temporal_loss = self.temporal_loss(ZV_mu,X,tempo,n_repeats)
@@ -156,8 +162,8 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         self.Z = torch.cat((self.Z, z),0)
         self.labels = torch.cat((self.labels, y_missing),0)
         self.tempo = torch.cat((self.tempo, tempo),0)
-        self.centroids.append(z.detach().to(self.device))
-        self.M.append( (torch.eye(z.shape[-1]).repeat(z.shape[0],1,1) * tempo[:,None,None]).to(self.device) ) #id matrices whose size increases with time to hosp
+        #self.centroids.append(z.detach().to(self.device))
+        #self.M.append( (torch.eye(z.shape[-1]).repeat(z.shape[0],1,1) * tempo[:,None,None]).to(self.device) ) #id matrices whose size increases with time to hosp
 
         ## print to observe evolution of different losses
         if self.print:
