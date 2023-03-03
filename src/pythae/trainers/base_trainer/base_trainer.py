@@ -146,7 +146,7 @@ class BaseTrainer:
         return DataLoader(
             dataset=train_dataset,
             batch_size=self.training_config.batch_size,
-            shuffle=True,
+            shuffle=False,
         )
 
     def get_eval_dataloader(
@@ -346,10 +346,10 @@ class BaseTrainer:
                 self._schedulers_step(epoch_train_loss)
 
             #parameter updates
-            if self.model.update_parameters is not None:
+            if hasattr(self.model,'update_parameters'):
                 self.model.update_parameters()
 
-            if self.model.temperature is not None:
+            if hasattr(self.model,'temperature'):
                 self.model.temperature = epoch/(self.training_config.num_epochs + 1)
 
             if (

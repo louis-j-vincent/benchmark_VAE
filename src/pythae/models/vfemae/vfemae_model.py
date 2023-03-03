@@ -71,7 +71,6 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         ## PARAMS RELATIVE TO vAE
         self.p = 0.1 #p for the bernoulli encoding the number of missing values
         self.n_repeats = 10 #number of repetition
-        self.init_loss = True
         ## PARAMS RELATIVE TO EMAE
         self.beta = 1
         self.gamma = 1
@@ -82,8 +81,6 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         self.plot = False
         self.temp_start = -1
         self.use_missing_labels = False
-        self.tempered_EM = False
-        self.deterministic_EM = True
         self.print = False
         self.Z = torch.tensor([])
         self.labels = torch.tensor([])
@@ -95,10 +92,9 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self.mu = torch.zeros((self.K,model_config.latent_dim)).to(device)
         print('self.K is ',self.K,self.mu.shape[1])
-        print(min(self.K,self.mu.shape[1]))
-        for k in range(min(self.K,self.mu.shape[1])):
-            print(k)
-            self.mu[k,k] = 1.
+        #print(min(self.K,self.mu.shape[1]))
+        #for k in range(min(self.K,self.mu.shape[1])):
+        #    self.mu[k,k] = 1.
         self.Sigma = torch.ones(self.mu.shape).to(device)
         self.cluster_map = torch.eye(self.K)
         self.device = device
@@ -147,12 +143,14 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         #if XV_hat.shape != X.shape:
         #    XV_hat = torch.squeeze(XV_hat, 1) #if dimension added
 
-        recon_loss = self.loss_function(XV_hat[(X!=-10)], X[(X!=-10)])
+        recon_loss = self.loss_function(XV_hat[(X!=-10)], X[(X!=-10)]) * 100
         temporal_loss = self.temporal_loss(ZV_mu,X,tempo,n_repeats)
 
         loss = recon_loss + temporal_loss * self.gamma
         if self.temperature > self.temp_start:
             loss += (LLloss + classif_loss)*self.beta*self.temperature 
+
+        loss += self.loss_function(ZV_mu,ZV_mu*0.)*0.1
 
         ## update args
         self.Z = torch.cat((self.Z, z),0)
@@ -271,8 +269,8 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
         mu = tau.T@Z.detach().cpu() / tau_sum
         Sigma = (tau[:,:,None] * (Z[:,None,:].detach().cpu()-mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum + 0.00001
-        mu[self.i_i50] = 0
-        Sigma[self.i_i50] = 0.001
+        #mu[self.i_i50] = 0
+        #Sigma[self.i_i50] = 0.001
         return mu, Sigma
 
     def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
@@ -338,45 +336,8 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
         self.hist['tau'] += [self.tau]
 
-        if self.plot==True:
-            M = 50000
-            n = max(1,Z.shape[0]//M)
-            X = Z.detach().numpy()
-            pca = PCA(n_components=2)
-            pca.fit(X)
-            X = X@pca.components_.T
-            fig, ax = plt.subplots(3,1,figsize=(18,8))
-            sample = (self.labels[:,self.K:].sum(axis=-1)==0) #sample on non missing data points
-            ax[0].scatter(X[sample,0],X[sample,1],c=torch.where(self.labels==1)[1][sample].detach(),alpha=0.8)
-            color = np.concatenate((tau.detach().numpy(),np.zeros(len(tau)).reshape(-1,1)),axis=1)
-            tau_sum = tau.mean(axis=0).detach().numpy()
-            tau_sum = tau_sum/max(tau_sum)
-            print('tau sum',tau_sum)
-
-
-            for i in range(self.K):
-                mu = (self.mu[i]@pca.components_.T).detach().numpy()
-                Sigma = (pca.components_@torch.diag(self.Sigma[i]).detach().numpy()@pca.components_.T)
-                color = 'r' if i==self.i_i50 else 'k'
-                ax[0] = self.draw_95_ellipse(mu, Sigma, alpha = tau_sum[i], ax=ax[0], c=color)
-
-            step = [0] + list(np.where(self.tempo.detach().numpy()==1)[0])
-            for i in range(30):
-                y = self.labels[step[i]:step[i+1],self.i_i50].detach().numpy()
-                if len(y)>0:
-                    y = GF1D(y,10)
-                    if max(y)>0:
-                        y = y/max(y)
-
-                    ax[1].plot(X[step[i]:step[i+1],0],X[step[i]:step[i+1],1],alpha=0.3)
-                    ax[1].scatter(X[step[i]:step[i+1],0],X[step[i]:step[i+1],1],c=y,alpha=0.8)
-
-            img = tau[::1][:200].detach().numpy().T
-            img[0] = (self.tempo==1)[:200]
-            ax[2].imshow(img)
-
-            fig.suptitle(f'Scatterplot on 2d PCA at epoch {self.epoch}')
-            fig.savefig(f'plot{self.epoch:03d}.png')
+        if self.plot:
+            self.plot_step()
         
         self.set_vector_field()
         self.Z = torch.tensor([])
@@ -387,6 +348,65 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         self.hist['Sigma'] = torch.vstack([self.hist['Sigma'],self.Sigma])
         self.hist['beta'] += [self.beta]
 
+    def plot_step(self):
+
+        Z, tau = self.Z.detach().numpy(), self.tau
+        sample = (self.labels[:,self.K:].sum(axis=-1)==0) #sample on non missing data points
+        color = np.concatenate((tau.detach().numpy(),np.zeros(len(tau)).reshape(-1,1)),axis=1)
+        tau_sum = tau.mean(axis=0).detach().numpy()
+        tau_sum = tau_sum/max(tau_sum)
+
+        pca = PCA(n_components=2)
+        pca.fit(Z)
+
+        X = Z@pca.components_.T
+
+        fig, ax = plt.subplots(3,1,figsize=(18,8))
+        # scatter plot for pca on latent space
+        ax[0].scatter(X[sample,0],X[sample,1],c=torch.where(self.labels==1)[1][sample].detach(),alpha=0.8)
+        # draw associated projected ellipses
+        for i in range(self.K):
+            mu = (self.mu[i]@pca.components_.T).detach().numpy()
+            Sigma = (pca.components_@torch.diag(self.Sigma[i]).detach().numpy()@pca.components_.T)
+            color = 'r' if i==self.i_i50 else 'k'
+            ax[0] = self.draw_95_ellipse(mu, Sigma, alpha = tau_sum[i], ax=ax[0], c=color)
+        # plot 30 first trajectories
+        step = [0] + list(np.where(self.tempo.detach().numpy()==1)[0])
+        for i in range(min(30,len(step)-1)):
+            y = self.labels[step[i]:step[i+1],self.i_i50].detach().numpy()
+            if len(y)>0:
+                y = GF1D(y,10)
+                if max(y)>0:
+                    y = y/max(y)
+
+                ax[1].plot(X[step[i]:step[i+1],0],X[step[i]:step[i+1],1],alpha=0.3)
+                ax[1].scatter(X[step[i]:step[i+1],0],X[step[i]:step[i+1],1],c=y,alpha=0.8)
+        # plot first 300 steps of probas of each cluster
+        img = tau[::1][:300].detach().numpy().T
+        img[0] = (self.tempo==1)[:300]
+        ax[2].imshow(img)
+
+        fig.suptitle(f'Scatterplot on 2d PCA at epoch {self.epoch}')
+        fig.savefig(f'plot{self.epoch:03d}.png')
+
+
+        fig, ax = plt.subplots(2,1,figsize=(18,8))
+
+        x = self.X[:200].detach().clone().float()
+        z = self.encoder(x).embedding.detach().float()
+        x_recon = self.decoder(z).reconstruction.detach().reshape(x.shape[0],x.shape[1])
+
+        x_recon[x==-10] = float('nan')
+        x[x==-10] = float('nan')
+
+        ax[0].plot(x)
+        plt.gca().set_prop_cycle(None)
+        ax[0].plot(x_recon,':')
+        ax[1].plot(z)
+
+        fig.suptitle(f'X and its reconstruction at epoch {self.epoch}')
+        fig.savefig(f'recon{self.epoch:03d}.png')
+       
 ## compute vector field
 
     def set_vector_field(self):
