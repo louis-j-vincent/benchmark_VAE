@@ -1,7 +1,13 @@
 """
 In this module are stored the main Neural Networks Architectures.
 """
+import torch
+import numpy as np
+import torch.nn as nn
+from typing import List
 
+import torch.nn as nn
+from torch import cat, stack
 
 from .base_architectures import BaseDecoder, BaseDiscriminator, BaseEncoder, BaseMetric
 
