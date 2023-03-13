@@ -194,6 +194,16 @@ class AutoModel(nn.Module):
 
             model = PIWAE.load_from_folder(dir_path=dir_path)
 
+        elif model_name == "vfEMAEConfig":
+            from ..vfemae import vfEMAE
+
+            model = vfEMAE.load_from_folder(dir_path=dir_path)
+
+        elif model_name == "vEMAEConfig":
+            from ..vfemae import vfEMAE
+
+            model = vfEMAE.load_from_folder(dir_path=dir_path)
+
         else:
             raise NameError(
                 "Cannot reload automatically the model... "
