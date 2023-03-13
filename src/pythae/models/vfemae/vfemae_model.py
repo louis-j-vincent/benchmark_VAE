@@ -17,6 +17,8 @@ from sklearn.cluster import KMeans
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d as GF1D
+import time
+import pandas as pd
 
 
 class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
@@ -72,6 +74,7 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         self.p = 0.1 #p for the bernoulli encoding the number of missing values
         self.n_repeats = 10 #number of repetition
         ## PARAMS RELATIVE TO EMAE
+        self.delta = 1
         self.beta = 1
         self.gamma = 1
         self.EM_steps = 10
@@ -85,6 +88,8 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         self.Z = torch.tensor([])
         self.labels = torch.tensor([])
         self.tempo = torch.tensor([])
+        self.losses = torch.tensor([])
+        self.mfgs = torch.tensor([])
 
         ##init EMAE params
         self.init = True
@@ -103,11 +108,16 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         self.recon_loss, self.ll_loss = None, None
         self.epoch = 0
         self.i_i50 = 18
+        self.deterministic_EM = False
 
         ##Rieman
         self.M = []
         self.centroids = []
         self.S = 1
+        
+        config = vfEMAEConfig(input_dim=(self.latent_dim+1,1),
+                                latent_dim=self.latent_dim)
+        self.distribution_shift = Encoder_AE_MLP(config) #nn that will account for distribution shifts
 
     def forward(self, inputs: BaseDataset, **kwargs) -> ModelOutput:
         """The input data is encoded and decoded
@@ -124,10 +134,19 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
         n_repeats = self.n_repeats if self.training else 3
 
-        x, tempo = inputs["data"][:,1:], inputs['data'][:,0]
-        z = self.encoder(x).embedding
-        y_missing = F.one_hot(inputs["labels"].to(torch.int64),num_classes=self.K*3).float().to(self.device) #3 to overshoot if there are many classes
+        x = inputs["data"]
+        labels, tempo, mfgs = inputs["labels"][:,0].to(torch.int64), inputs["labels"][:,1].to(torch.float64), inputs["labels"][:,2].to(torch.int64)
+        y_missing = F.one_hot(labels,num_classes=self.K*3).float().to(self.device) #3 to overshoot if there are many classes
+        mfgs = F.one_hot(mfgs,num_classes=4).to(self.device)
         y = y_missing[:,:self.K]
+
+        z = self.encoder(x,mfgs).embedding
+
+        ## update args
+        self.Z = torch.cat((self.Z, z),0)
+        self.labels = torch.cat((self.labels, y_missing),0)
+        self.tempo = torch.cat((self.tempo, tempo),0)
+        self.mfgs = torch.cat((self.mfgs, mfgs),0)
 
         LLloss, classif_loss = self.likelihood_loss(z,y_missing) #Log likelihood loss on all data 
         
@@ -135,41 +154,55 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         z_var = self.variationnal_sampling(y,z)
 
         ## NORMAL vAE step
-        X, Z = x.repeat_interleave(n_repeats,dim=0), z.repeat_interleave(n_repeats,dim=0)
+        X, Z = x.repeat_interleave(n_repeats,dim=0), z_var.repeat_interleave(n_repeats,dim=0)
+        Mfgs = mfgs.repeat_interleave(n_repeats, dim=0)
         XV = self.corrupt(X) #corrupt by adding missing values
 
-        ZV_mu = self.encoder(XV).embedding #encoding of xU
-        XV_hat = self.decoder(ZV_mu)["reconstruction"].reshape(ZV_mu.shape[0],x.shape[-1])
-        #if XV_hat.shape != X.shape:
-        #    XV_hat = torch.squeeze(XV_hat, 1) #if dimension added
-        plt.imshow(XV[:30].detach())
-        plt.show()
-        plt.imshow(XV_hat[:30].detach())
-        plt.show()
-        plt.imshow(ZV_mu[:30].detach())
-        plt.show()
+        ZV_mu = self.encoder(XV,Mfgs).embedding #encoding of xU
+        XV_hat = self.decoder(ZV_mu,Mfgs)["reconstruction"].reshape(ZV_mu.shape[0],x.shape[-1])
 
-        recon_loss = self.loss_function(XV_hat[(X!=-10)], X[(X!=-10)]) * 100
+        sample = np.random.choice(np.arange(len(z)),size=200,replace=True)
+        hsic_loss = self.HSIC(z[sample], mfgs[sample], s_x=1, s_y=1)
+
+        #recon_loss = self.loss_function(XV_hat[(X!=-10)], X[(X!=-10)]) / torch.std(X[(X!=-10)]) * 10
+        recon_loss = self.mse_std(XV_hat, X)
+
         temporal_loss = self.temporal_loss(ZV_mu,X,tempo,n_repeats)
 
         loss = recon_loss + temporal_loss * self.gamma
+
         if self.temperature > self.temp_start:
-            loss += (LLloss + classif_loss)*self.beta*self.temperature 
+            loss += (LLloss + classif_loss)*self.beta#*self.temperature 
 
-        loss += self.loss_function(ZV_mu,ZV_mu*0.)*0.1
+        reg_loss = self.loss_function(ZV_mu,ZV_mu*0.)*0.01
 
-        ## update args
-        self.Z = torch.cat((self.Z, z),0)
-        self.labels = torch.cat((self.labels, y_missing),0)
-        self.tempo = torch.cat((self.tempo, tempo),0)
+        loss += hsic_loss*self.delta
+        loss += reg_loss
+        loss += torch.abs(self.Sigma[self.i_i50]).mean()
+        loss = loss.mean()
+
         #self.centroids.append(z.detach().to(self.device))
         #self.M.append( (torch.eye(z.shape[-1]).repeat(z.shape[0],1,1) * tempo[:,None,None]).to(self.device) ) #id matrices whose size increases with time to hosp
 
+        losses_tensor = torch.tensor([self.epoch, 
+                                    recon_loss.item(),
+                                    LLloss.item(),
+                                    classif_loss.item(),
+                                    temporal_loss.item(),
+                                    reg_loss.item(),
+                                    hsic_loss.item(),
+                                    loss.item()]).reshape(1,-1)
+        self.losses = torch.cat((self.losses, losses_tensor),0)
+
         ## print to observe evolution of different losses
         if self.print:
-           print(f'Losses: e{self.epoch:.4f} - recon {recon_loss.item():.4f} - LLoss_total {LLloss.item():.4f} classif_loss {classif_loss.item():.4f} temporal_loss {temporal_loss.item():.4f} total_loss {loss.item():.4f}')
+            with open('log.txt', 'a') as f:
+                str1 = f'Losses: e{self.epoch:.4f} -recon {recon_loss.item():.4f} -LLoss {LLloss.item():.4f} classif {classif_loss.item():.4f} ' 
+                str2 = f'-temporal {temporal_loss.item():.4f} latent {reg_loss.item():.4f} HSIC {hsic_loss.item():.4f} total {loss.item():.4f}\n'
+                f.write(str1)
+                f.write(str2)
         
-        output = ModelOutput(loss=recon_loss + self.beta*(LLloss + classif_loss) + temporal_loss*self.gamma, recon_x=XV_hat, z=Z)
+        output = ModelOutput(loss=loss, recon_x=XV_hat, z=Z)
 
         return output
 
@@ -181,7 +214,7 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         else:
             return z
 
-    def temporal_loss(self,Z,X,tempo,n_repeats):
+    def temporal_loss_structured(self,Z,X,tempo,n_repeats):
         """
         Temporal loss
 
@@ -215,7 +248,7 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         U_half = U[:,:U.shape[1]//2]
         V = torch.bernoulli( U_half*self.p )
         V = V.repeat(1,2)
-        XV = X.detach().clone()
+        XV = X.clone()
         XV[V==1] = -10 #add missing value when V mask == 1
 
         return XV
@@ -230,6 +263,26 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         ).sum(dim=-1)
         return MSE.mean(dim=0)
 
+    def mse_std(self, recon_x, x):
+        #std =  torch.nanmean( (x - torch.nanmean(x,axis=0))**2, axis=0 ).repeat(x.shape[0],1)
+        n_nans = len(x) - x.isnan().sum(axis=0)
+        mu = torch.nansum(x,axis=0) / n_nans
+        std =  torch.sqrt( torch.nansum( (x - mu)**2, axis=0 ) / n_nans )
+        std = std.repeat(x.shape[0],1)
+
+        #return torch.mean( (recon_x[x!=-10] - x[x!=-10])**2 / (std[x!=-10] + 1e-5) )
+        return torch.mean( (recon_x[(x!=-10)] - x[(x!=-10)])**2 / (std[(x!=-10)] + 1e-5) )
+ 
+    def HSIC(self, x, y, s_x=1, s_y=1):
+        m,_ = x.shape #batch size
+        K = GaussianKernelMatrix(x,s_x)
+        L = CategoricalKernelMatrix(y,s_y)
+        self.L_mat, self.K_mat = L, K
+        H = torch.eye(m) - 1.0/m * torch.ones((m,m))
+        H = H.float().to(self.device)
+        HSIC = torch.trace(torch.mm(L,torch.mm(H,torch.mm(K,H))))/((m-1)**2)
+        return HSIC
+
 ## compute likelihood loss
 
     def E_step(self, Z):
@@ -242,44 +295,75 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
         #E-step
         N_log_prob = -0.5* ( Y**2/Sigma + torch.log(2*np.pi*Sigma) )
-        #print('****')
-        #print(N_log_prob.sum(axis=2).sum(axis=1))
         log_tau = torch.log(self.alpha[None,:] + 1e-4) + N_log_prob.sum(axis=2) #log [ p(x_i ; z_i = k) p(z_i = k)]
         log_tau = (log_tau - torch.logsumexp(log_tau, axis=1)[:,None])#.detach().cpu()
         self.log_tau = log_tau
         tau = torch.exp(log_tau)
-        for i in range(tau.shape[0]):
-            if tau[i].sum()==0:
-                print('')
-                print(i,tau[i],log_tau[i])
-                print(stop)
-        #tau_ = torch.exp(log_tau)
-        #tau = tau_ / tau_.sum(axis=1)[:,None]
+
         return tau , Y, Sigma
 
-    def log_prob(self,Y,Sigma,tau):
+    def log_prob(self,Y,Z,Sigma,tau):
         """
         Given Z and tau, returns the log prob
         """
-        N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*np.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
+        N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*np.pi*Sigma)),torch.tensor(0) ) # -0.5*(y**2/sigma +)
         N_prob = (torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
         prob = torch.mean(N_prob[N_prob==N_prob]) #nanmean walkaround
+        #prob *= (torch.exp(torch.minimum(-0.5* ( Z**2 + torch.log(2*torch.tensor(np.pi))),torch.tensor(0) )).mean())**0.1
 
         #if tau_prior is not None:
         #    prob -= ((tau.mean(axis=0) - self.alpha)**2 / 2 ).sum()
 
         return prob
 
+    def log_prob_(self,Y,Sigma,tau):
+        """
+        Given Z and tau, returns the log prob
+        """
+        N_log_prob = torch.minimum(-0.5* ( Y**2/Sigma + torch.log(2*np.pi*Sigma)),torch.tensor(0) )#.sum(axis=0)
+        N_prob = torch.log(torch.exp(N_log_prob) * tau[:,:self.K,None]).sum(axis=1) #only use the kth gaussian 
+        #prob = torch.mean(N_prob[N_prob==N_prob]) #nanmean walkaround
+
+        #if tau_prior is not None:
+        #    prob -= ((tau.mean(axis=0) - self.alpha)**2 / 2 ).sum()
+
+        return N_prob
+
     def M_step(self, tau, Z, mu_prior=None):
 
-        tau_sum = tau[:,:,None].sum(axis=0).detach().cpu()
-        mu = tau.T@Z.detach().cpu() / tau_sum
-        Sigma = (tau[:,:,None] * (Z[:,None,:].detach().cpu()-mu[None,:,:].detach().cpu())**2).sum(axis=0).detach().cpu()/tau_sum + 0.00001
+        tau_sum = tau[:,:,None].sum(axis=0)
+        tau_sum[tau_sum==0] = 1
+        mu = tau.T@Z / tau_sum
+        Sigma = (tau[:,:,None] * (Z[:,None,:]-mu[None,:,:])**2).sum(axis=0)/tau_sum + 0.00001
         #mu[self.i_i50] = 0
-        #Sigma[self.i_i50] = 0.001
-        return mu, Sigma
+        #Sigma[self.i_i50] /= 2
+        return mu.detach().cpu(), Sigma.detach().cpu()
 
     def likelihood_loss(self, Z, y, ll_with_missing_labels = True):
+        """
+        Compute likelihood of gaussian Mixture Model by:
+        - computing tau (if we are using missing labels) which is the a posteriori probability for each point of being a part of each of hte K clusters
+        - computing the likelihood loss defined as sum_i sum_k tau_i,k * P(z_i sachant mu_k, Sigma_k)
+        """
+
+        missing_labels = (y[:,:self.K].sum(axis=1)==0)
+
+        #E-step
+        tau, Y, Sigma = self.E_step(Z)
+
+        #get log prob
+        prob = self.log_prob(Y,Z,Sigma,tau)
+
+        tau_prior = torch.clone(y[:,:self.K])#.detach().cpu()
+        if missing_labels.float().mean()!=1:
+            loss_classif = self.loss_function( tau_prior[~missing_labels], tau[~missing_labels] )
+        else:
+            loss_classif = torch.tensor(0)
+        #loss_classif = torch.abs( tau_prior[~missing_labels], tau[~missing_labels] ).sum(axis=1).mean()
+
+        return 1 - prob.mean(), loss_classif
+
+    def likelihood_loss_(self, Z, y, ll_with_missing_labels = True):
         """
         Compute likelihood of gaussian Mixture Model by:
         - computing tau (if we are using missing labels) which is the a posteriori probability for each point of being a part of each of hte K clusters
@@ -292,12 +376,12 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         tau, Y, Sigma = self.E_step(Z)
 
         #get log prob
-        prob = self.log_prob(Y,Sigma,tau)
+        log_prob = self.log_prob(Y,Sigma,tau)
 
         tau_prior = torch.clone(y[:,:self.K])#.detach().cpu()
-        loss_classif = F.l1_loss( tau_prior[~missing_labels], tau[~missing_labels] )
+        loss_classif = self.loss_function( tau_prior[~missing_labels], tau[~missing_labels] )
 
-        return 1 - prob.mean(), loss_classif
+        return - log_prob.mean(), loss_classif
 
 ## update parameters
 
@@ -318,22 +402,34 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
             self.init=False
 
         print('Updating parameters')
+
+        Z = Z.to(self.device)
+
         for i in range(self.EM_steps):
 
             #E-step
-            tau_new, Y, Sigma = self.E_step(Z)
-            tau_new = tau_new.detach().cpu()
-            tau[missing_labels] = tau_new[missing_labels]
-            for i in range(tau.shape[0]):
-                if tau[i].sum()==0:
-                    print('')
-                    print(i,tau[i],tau_new[i])
-                    #print(stop_new)
+            start = time.time()
 
+            tau_new, Y, Sigma = self.E_step(Z)
+
+            d_time = time.time() - start
+            start = time.time()
+            print(f'E step done in {d_time}')
+
+            tau_new = tau_new#.detach().cpu()
+            tau[missing_labels] = tau_new[missing_labels]
             #M-step
-            self.mu, self.Sigma = self.M_step(tau[~missing_labels], Z[~missing_labels], self.mu)
+            if self.deterministic_EM:
+                self.mu, self.Sigma = self.M_step(tau[~missing_labels], Z[~missing_labels], self.mu)
+            else:
+                self.mu, self.Sigma = self.M_step(tau, Z, self.mu)
+
+            d_time = time.time() - start
+            start = time.time()
+            print(f'M step done in {d_time}')
+            
             if (self.mu!=self.mu).sum()>0:
-                print(stopping)
+                print(stoping)
 
             #set to device
             self.tau = tau.to(self.device)
@@ -344,11 +440,19 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
         if self.plot:
             self.plot_step()
-        
+
+            d_time = time.time() - start
+            start = time.time()
+            print(f'plotting done in {d_time}')     
+
         self.set_vector_field()
+        d_time = time.time() - start
+        start = time.time()
+        print(f'vector field set done in {d_time}')
         self.Z = torch.tensor([])
         self.labels = torch.tensor([])
         self.tempo = torch.tensor([])
+        self.mfgs = torch.tensor([])
 
         self.hist['mu'] = torch.vstack([self.hist['mu'],self.mu])
         self.hist['Sigma'] = torch.vstack([self.hist['Sigma'],self.Sigma])
@@ -358,27 +462,31 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
 
         Z, tau = self.Z.detach().numpy(), self.tau
         sample = (self.labels[:,self.K:].sum(axis=-1)==0) #sample on non missing data points
+        mfgs = self.mfgs[sample]
         color = np.concatenate((tau.detach().numpy(),np.zeros(len(tau)).reshape(-1,1)),axis=1)
         tau_sum = tau.mean(axis=0).detach().numpy()
         tau_sum = tau_sum/max(tau_sum)
 
         pca = PCA(n_components=2)
+        #mu_diff = (self.mu[self.i_i50] - self.mu[~self.i_i50].mean(axis=0)).reshape(1,-1)
+        #pca.fit(mu_diff)
         pca.fit(Z)
 
         X = Z@pca.components_.T
 
-        fig, ax = plt.subplots(3,1,figsize=(18,8))
+        cmap = plt.get_cmap("tab10")
+
+        fig, ax = plt.subplots(3,1,figsize=(10,6))
         # scatter plot for pca on latent space
-        ax[0].scatter(X[sample,0],X[sample,1],c=torch.where(self.labels==1)[1][sample].detach(),alpha=0.8)
+        ax[0].scatter(X[sample,0],X[sample,1],c=torch.where(self.labels==1)[1][sample].detach(),alpha=0.8, cmap = 'tab10')
         # draw associated projected ellipses
         for i in range(self.K):
             mu = (self.mu[i]@pca.components_.T).detach().numpy()
             Sigma = (pca.components_@torch.diag(self.Sigma[i]).detach().numpy()@pca.components_.T)
-            color = 'r' if i==self.i_i50 else 'k'
-            ax[0] = self.draw_95_ellipse(mu, Sigma, alpha = tau_sum[i], ax=ax[0], c=color)
+            ax[0] = self.draw_95_ellipse(mu, Sigma, alpha = tau_sum[i], ax=ax[0], c=cmap(i))
         # plot 30 first trajectories
         step = [0] + list(np.where(self.tempo.detach().numpy()==1)[0])
-        for i in range(min(30,len(step)-1)):
+        for i in range(min(10,len(step)-1)):
             y = self.labels[step[i]:step[i+1],self.i_i50].detach().numpy()
             if len(y)>0:
                 y = GF1D(y,10)
@@ -395,27 +503,48 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
         fig.suptitle(f'Scatterplot on 2d PCA at epoch {self.epoch}')
         fig.savefig(f'plot{self.epoch:03d}.png')
 
-
-        fig, ax = plt.subplots(2,1,figsize=(18,8))
+        fig, ax = plt.subplots(2,1,figsize=(10,6))
 
         x = self.X[:200].detach().clone().float()
-        z = self.encoder(x).embedding.detach().float()
-        x_recon = self.decoder(z).reconstruction.detach().reshape(x.shape[0],x.shape[1])
+        z = self.encoder(x,self.mfgs[:200]).embedding.detach().float()
+        x_recon = self.decoder(z,self.mfgs[:200]).reconstruction.detach().reshape(x.shape[0],x.shape[1])
 
         x_recon[x==-10] = float('nan')
         x[x==-10] = float('nan')
 
-        ax[0].plot(x)
+        ax[0].plot(x[:,:20])
         plt.gca().set_prop_cycle(None)
-        ax[0].plot(x_recon,':')
+        ax[0].plot(x_recon[:,:20],':')
         ax[1].plot(z)
 
         fig.suptitle(f'X and its reconstruction at epoch {self.epoch}')
         fig.savefig(f'recon{self.epoch:03d}.png')
+
+        fig, ax = plt.subplots(1,2,figsize=(10,6))
+
+
+        ax[0].imshow(self.L_mat.detach())
+        ax[1].imshow(self.K_mat.detach())
+
+        fig.suptitle(f'Correlation matrices of z and y {self.epoch}')
+        fig.savefig(f'correl{self.epoch:03d}.png')
+
+        fig, ax = plt.subplots(figsize=(10,6))
+
+        df_losses = pd.DataFrame(self.losses.detach(), 
+                                    columns = ['epoch','recon','Ll','classif','temporal','reg','hsic','total'])
+
+        df_losses.rolling(5).mean().plot(logy=True,ax=ax)
+
+
+        fig.suptitle(f'Losses at epoch {self.epoch}')
+        fig.savefig(f'losses.png')
+
+        plt.clf()
        
 ## compute vector field
 
-    def set_vector_field(self):
+    def set_vector_field_structured(self):
         """
         Vector field when we have a defined structure like 1095 * n patient obs
         """
@@ -503,9 +632,24 @@ class vfEMAE(BaseAE): #equivalent of AE_multi_U_w_variance
             )
 
         path_to_model_config = os.path.join(dir_path, "model_config.json")
-        model_config = vEMAEConfig.from_json_file(path_to_model_config)
+        model_config = vfEMAEConfig.from_json_file(path_to_model_config)
 
         return model_config
+
+## HSIC
+
+def pairwise_distances(x):
+    #x should be two dimensional
+    instances_norm = torch.sum(x**2,-1).reshape((-1,1))
+    return -2*torch.mm(x,x.t()) + instances_norm + instances_norm.t()
+
+def GaussianKernelMatrix(x, sigma=1):
+    pairwise_distances_ = pairwise_distances(x)
+    return torch.exp(-pairwise_distances_ /sigma)
+
+def CategoricalKernelMatrix(x, sigma=1):
+    return torch.mm(x, x.t()).float()
+
 
 
     
