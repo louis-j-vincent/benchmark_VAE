@@ -20,7 +20,6 @@ class Encoder_AE_MLP(BaseEncoder):
         inter_layer = 64
 
         layers.append(nn.Sequential(nn.Linear(np.prod(args.input_dim), inter_layer), nn.ReLU()))
-        #layers.append(nn.Sequential(nn.Linear(inter_layer, inter_layer), nn.ReLU()))
 
         self.layers = layers
         self.depth = len(layers)
@@ -179,7 +178,7 @@ class Decoder_AE_MLP(BaseDecoder):
 
 
         layers.append(
-            nn.Sequential(nn.Linear(inter_layer, int(np.prod(args.input_dim))), nn.Sigmoid())
+            nn.Sequential(nn.Linear(inter_layer, int(np.prod(args.input_dim))))
         )
 
         self.layers = layers
