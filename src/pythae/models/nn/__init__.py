@@ -175,7 +175,9 @@ class Decoder_AE_distribution_shift(BaseDecoder):
 
         layers = nn.ModuleList()
 
-        layers.append(nn.Sequential(nn.Linear(args.latent_dim + self.ds_dim, inter_layer), nn.ReLU()))
+        layers.append(
+            nn.Sequential(nn.Linear(args.latent_dim + self.ds_dim, inter_layer), nn.ReLU()),
+            )
         #layers.append(nn.Sequential(nn.Linear(inter_layer, inter_layer), nn.ReLU()))
 
 
