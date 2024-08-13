@@ -5,7 +5,6 @@ import numpy as np
 import torch
 
 from ..customexception import DatasetError
-from ..data.datasets import collate_dataset_output
 from ..data.preprocessors import BaseDataset, DataProcessor
 from ..models import BaseAE
 from ..trainers import *
@@ -47,13 +46,12 @@ class TrainingPipeline(Pipeline):
         model: Optional[BaseAE],
         training_config: Optional[BaseTrainerConfig] = None,
     ):
+
         if training_config is None:
             if model.model_name == "RAE_L2":
                 training_config = CoupledOptimizerTrainerConfig(
-                    encoder_optimizer_params={"weight_decay": 0},
-                    decoder_optimizer_params={
-                        "weight_decay": model.model_config.reg_weight
-                    },
+                    encoder_optim_decay=0,
+                    decoder_optim_decay=model.model_config.reg_weight,
                 )
 
             elif (
@@ -69,22 +67,18 @@ class TrainingPipeline(Pipeline):
 
         elif model.model_name == "RAE_L2" or model.model_name == "PIWAE":
             if not isinstance(training_config, CoupledOptimizerTrainerConfig):
+
                 raise AssertionError(
                     "A 'CoupledOptimizerTrainerConfig' "
                     f"is expected for training a {model.model_name}"
                 )
             if model.model_name == "RAE_L2":
-                if training_config.decoder_optimizer_params is None:
-                    training_config.decoder_optimizer_params = {
-                        "weight_decay": model.model_config.reg_weight
-                    }
-                else:
-                    training_config.decoder_optimizer_params[
-                        "weight_decay"
-                    ] = model.model_config.reg_weight
+                training_config.encoder_optim_decay = 0.0
+                training_config.decoder_optim_decay = model.model_config.reg_weight
 
         elif model.model_name == "Adversarial_AE" or model.model_name == "FactorVAE":
             if not isinstance(training_config, AdversarialTrainerConfig):
+
                 raise AssertionError(
                     "A 'AdversarialTrainer' "
                     f"is expected for training a {model.model_name}"
@@ -94,6 +88,7 @@ class TrainingPipeline(Pipeline):
             if not isinstance(
                 training_config, CoupledOptimizerAdversarialTrainerConfig
             ):
+
                 raise AssertionError(
                     "A 'CoupledOptimizerAdversarialTrainer' "
                     "is expected for training a VAEGAN"
@@ -109,6 +104,7 @@ class TrainingPipeline(Pipeline):
         self.training_config = training_config
 
     def _check_dataset(self, dataset: BaseDataset):
+
         try:
             dataset_output = dataset[0]
 
@@ -138,81 +134,87 @@ class TrainingPipeline(Pipeline):
         # check everything if fine when combined with data loader
         from torch.utils.data import DataLoader
 
-        dataloader = DataLoader(
-            dataset=dataset,
-            batch_size=min(len(dataset), 2),
-            collate_fn=collate_dataset_output,
-        )
+        dataloader = DataLoader(dataset=dataset, batch_size=min(len(dataset), 2))
         loader_out = next(iter(dataloader))
-        assert loader_out.data.shape[0] == min(
+        assert loader_out['data'].shape[0] == min(
             len(dataset), 2
-        ), "Error when combining dataset with loader."
+        ), "Error when combining dataset wih loader."
 
     def __call__(
         self,
-        train_data: Union[
-            np.ndarray,
-            torch.Tensor,
-            torch.utils.data.Dataset,
-            torch.utils.data.DataLoader,
-        ] = None,
-        eval_data: Union[
-            np.ndarray,
-            torch.Tensor,
-            torch.utils.data.Dataset,
-            torch.utils.data.DataLoader,
-        ] = None,
+        train_data: Union[np.ndarray, torch.Tensor, torch.utils.data.Dataset],
+        eval_data: Union[np.ndarray, torch.Tensor, torch.utils.data.Dataset] = None,
+        train_label: Union[np.ndarray, torch.Tensor, torch.utils.data.Dataset] = None,
+        eval_label: Union[np.ndarray, torch.Tensor, torch.utils.data.Dataset] = None,
+        train_extra: Union[np.ndarray, torch.Tensor, torch.utils.data.Dataset] = None,
+        eval_extra: Union[np.ndarray, torch.Tensor, torch.utils.data.Dataset] = None,
         callbacks: List[TrainingCallback] = None,
+        shuffle = True
     ):
         """
         Launch the model training on the provided data.
 
         Args:
-            train_data: The training data or DataLoader.
+            training_data (Union[~numpy.ndarray, ~torch.Tensor]): The training data as a
+                :class:`numpy.ndarray` or :class:`torch.Tensor` of shape (mini_batch x
+                n_channels x ...)
 
-            eval_data: The evaluation data or DataLoader. If None, only uses train_data for training. Default: None
+            eval_data (Optional[Union[~numpy.ndarray, ~torch.Tensor]]): The evaluation data as a
+                :class:`numpy.ndarray` or :class:`torch.Tensor` of shape (mini_batch x
+                n_channels x ...). If None, only uses train_fata for training. Default: None.
 
             callbacks (List[~pythae.trainers.training_callbacks.TrainingCallbacks]):
                 A list of callbacks to use during training.
         """
 
-        # Initialize variables for datasets and dataloaders
-        train_dataset, eval_dataset = None, None
-        train_dataloader, eval_dataloader = None, None
+        if isinstance(train_data, np.ndarray) or isinstance(train_data, torch.Tensor):
 
-        if isinstance(train_data, torch.utils.data.DataLoader):
-            train_dataloader = train_data
-        elif isinstance(train_data, (np.ndarray, torch.Tensor)):
             logger.info("Preprocessing train data...")
             train_data = self.data_processor.process_data(train_data)
-            train_dataset = self.data_processor.to_dataset(train_data)
-            logger.info("Checking train dataset...")
-            self._check_dataset(train_dataset)
+            if train_label is not None:
+                train_label = self.data_processor.process_data(train_label)
+                train_dataset = self.data_processor.to_dataset(train_data,train_label)
+                if train_extra is not None:
+                    train_extra = self.data_processor.process_data(train_extra)
+                    train_dataset = self.data_processor.to_dataset(train_data,train_label,train_extra)
+            else:
+                train_dataset = self.data_processor.to_dataset(train_data)
+
         else:
             train_dataset = train_data
-            logger.info("Checking train dataset...")
-            self._check_dataset(train_dataset)
+        
+
+        logger.info("Checking train dataset...")
+        self._check_dataset(train_dataset)
 
         if eval_data is not None:
-            if isinstance(eval_data, torch.utils.data.DataLoader):
-                eval_dataloader = eval_data
-            elif isinstance(eval_data, (np.ndarray, torch.Tensor)):
+            if isinstance(eval_data, np.ndarray) or isinstance(eval_data, torch.Tensor):
                 logger.info("Preprocessing eval data...\n")
                 eval_data = self.data_processor.process_data(eval_data)
-                eval_dataset = self.data_processor.to_dataset(eval_data)
-                logger.info("Checking eval dataset...")
-                self._check_dataset(eval_dataset)
+                if eval_label is not None:
+                    eval_label = self.data_processor.process_data(eval_label)
+                    eval_dataset = self.data_processor.to_dataset(eval_data,eval_label)
+                    if eval_extra is not None:
+                        eval_extra = self.data_processor.process_data(eval_extra)
+                        eval_dataset = self.data_processor.to_dataset(eval_data,eval_label,eval_extra)
+                else:
+                    eval_dataset = self.data_processor.to_dataset(eval_data)
+
             else:
                 eval_dataset = eval_data
-                logger.info("Checking eval dataset...")
-                self._check_dataset(eval_dataset)
+
+            logger.info("Checking eval dataset...")
+            self._check_dataset(eval_dataset)
+
+        else:
+            eval_dataset = None
 
         if isinstance(self.training_config, CoupledOptimizerTrainerConfig):
             logger.info("Using Coupled Optimizer Trainer\n")
             trainer = CoupledOptimizerTrainer(
                 model=self.model,
-                train_dataset=train_dataloader or train_dataset,
-                eval_dataset=eval_dataloader or eval_dataset,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
                 training_config=self.training_config,
                 callbacks=callbacks,
             )
@@ -221,8 +223,8 @@ class TrainingPipeline(Pipeline):
             logger.info("Using Adversarial Trainer\n")
             trainer = AdversarialTrainer(
                 model=self.model,
-                train_dataset=train_dataloader or train_dataset,
-                eval_dataset=eval_dataloader or eval_dataset,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
                 training_config=self.training_config,
                 callbacks=callbacks,
             )
@@ -231,8 +233,8 @@ class TrainingPipeline(Pipeline):
             logger.info("Using Coupled Optimizer Adversarial Trainer\n")
             trainer = CoupledOptimizerAdversarialTrainer(
                 model=self.model,
-                train_dataset=train_dataloader or train_dataset,
-                eval_dataset=eval_dataloader or eval_dataset,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
                 training_config=self.training_config,
                 callbacks=callbacks,
             )
@@ -241,13 +243,13 @@ class TrainingPipeline(Pipeline):
             logger.info("Using Base Trainer\n")
             trainer = BaseTrainer(
                 model=self.model,
-                train_dataset=train_dataloader or train_dataset,
-                eval_dataset=eval_dataloader or eval_dataset,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
                 training_config=self.training_config,
                 callbacks=callbacks,
+                shuffle=shuffle
             )
-        else:
-            raise ValueError("The provided training config is not supported.")
 
         self.trainer = trainer
+
         trainer.train()
