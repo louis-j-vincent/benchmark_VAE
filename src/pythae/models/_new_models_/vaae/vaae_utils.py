@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..base.base_utils import ModelOutput
+from ...base.base_utils import ModelOutput
 from .vaae_config import VAAEConfig
 import numpy as np
 
@@ -166,14 +166,14 @@ class Plotter(nn.Module):
 
         return ax 
 
-class DataMasker(nn.Module):
+class data_masker(nn.Module):
     def __init__(self, model):
 
         nn.Module.__init__(self)
 
-        self.p = model.p
-        self.n_repeats = model.n_repeats
-        self.nan_token = model.nan_token
+        self.missing_value_prob = model.missing_value_prob
+        self.n_repeats = model.num_repeats
+        self.nan_value = model.nan_value
 
     def data_augmentation(self, x: torch.Tensor, *args: torch.Tensor):
         """
@@ -181,29 +181,42 @@ class DataMasker(nn.Module):
         """
         n_repeats = self.n_repeats# if self.training else 1
 
-        X = x.repeat_interleave(n_repeats,dim=0)
-        XV = self.corrupt(X) 
+        x = self.repeat_data(x)
+        args = self.repeat_data(args)
 
-        args = list(args)
-        for i in range(len(args)):
-            args[i] = args[i].repeat_interleave(n_repeats,dim=0)
+        x_corrupted = self.corrupt(x) 
      
-        return X, XV, *args
+        return x, x_corrupted, *args
 
-    def corrupt(self, X):
+    def repeat_data(self, *args: torch.Tensor):
         """
-        Adds missing values with probability p
+        Repeat each tensor in args by self.n_repeats times along the batch dimension.
+
+        Args:
+            *args: Variable number of input tensors to be repeated.
+
+        Returns:
+            Tuple[torch.Tensor, ...]: A tuple containing the repeated tensors.
         """
-        #if variance, then U should be divided then doubled up
+        repeated_args = tuple(arg.repeat_interleave(self.n_repeats, dim=0) for arg in args)
+        return repeated_args
 
-        U = (X!=self.nan_token)*1 #get mask on missing values
-        p = U*self.p
-        V = torch.bernoulli( p )
-        V[::self.n_repeats] = 0 #preserve the first element as a copy with no extra missing info
-        XV = X.clone()
-        XV[V==1] = self.nan_token #add missing value when V mask == 1
 
-        return XV
+    def corrupt_data(self, x):
+        """
+        Introduce missing values in the input data with a given probability.
 
+        Args:
+            x (Tensor): Input data to corrupt.
+
+        Returns:
+            Tensor: Corrupted input data.
+        """
+        mask_existing = (x != self.nan_value)
+        corruption_mask = torch.bernoulli(mask_existing * self.missing_value_prob)
+        x_corrupted = x.clone()
+        x_corrupted[corruption_mask == 1] = self.nan_value
+
+        return x_corrupted
 
 

@@ -1,20 +1,15 @@
-import os
 from typing import Optional
 
+import torch
 import torch.nn.functional as F
 
-from ...data.datasets import BaseDataset
-from ..base import BaseAE
-from ..base.base_utils import ModelOutput
-from ..nn import BaseDecoder, BaseEncoder
-from ..nn.default_architectures import Encoder_AE_MLP
+from ....data.datasets import BaseDataset
+from ...base import BaseAE
+from ...base.base_utils import ModelOutput
+from ...nn import BaseDecoder, BaseEncoder
+from ...nn.default_architectures import Encoder_AE_MLP
 from .vaae_config import VAAEConfig
-from .vaae_utils import DataMasker, Plotter
-
-from torch import tensor, cat, exp, std
-import torch
-from numpy.random import binomial
-import numpy as np
+from .vaae_utils import data_masker, Plotter
 
 class VAAE(BaseAE):
     """
@@ -52,6 +47,9 @@ class VAAE(BaseAE):
         self.update_parameters = None  # Placeholder for additional training parameters
         self.temperature = None  # Placeholder for temperature scaling
 
+        # Initialize data_masker
+        self.data_masker = data_masker(self)
+
         # Check if the encoder returns a log covariance
         self.uses_log_covariance = hasattr(encoder, 'log_covariance')
 
@@ -65,67 +63,48 @@ class VAAE(BaseAE):
         Returns:
             ModelOutput: Object containing loss, reconstruction, and latent variables.
         """
+        
+        # pass through encoder-decoder architecture
         x = inputs["data"]
         z = self.encoder(x).embedding
+        recon_x = self.decoder(z)["reconstruction"]
 
-        # Repeat and corrupt data if training
-        repeats = self.num_repeats if self.training else 3
-        x_repeated, z_repeated_mu, z_repeated_sigma = self.repeat_and_corrupt_data(x, z, repeats)
+        # Compute the loss
+        loss = self.compute_loss(x, z)
 
-        # Decode corrupted data
-        recon_x = self.decoder(z_repeated_mu)["reconstruction"]
-        recon_x = recon_x.squeeze(1) if recon_x.shape != x.shape else recon_x
+        return ModelOutput(loss=loss, recon_x=recon_x, z=z)
 
-        # Compute losses
-        recon_loss = self.compute_reconstruction_loss(recon_x, x_repeated, x)
-        reg_loss = self.loss_log_proba(z, z_repeated_mu, z_repeated_sigma)
-
-        # Combine losses
-        total_loss = recon_loss + self.regularization_weight * reg_loss
-
-        return ModelOutput(loss=total_loss, recon_x=recon_x, z=z)
-
-    def repeat_and_corrupt_data(self, x, z, repeats):
+    def compute_loss(self, x, z):
         """
-        Repeat and corrupt the input data.
+        Compute the total loss, including reconstruction and regularization losses.
 
         Args:
-            x (Tensor): Input data.
-            z (Tensor): Latent representation of the input data.
-            repeats (int): Number of times to repeat and corrupt the data.
+            x: Original input data.
+            z: Original latent variable.
 
         Returns:
-            Tuple[Tensor, Tensor]: Corrupted data and repeated latent representation.
+            Tensor: The total loss.
         """
-        x_repeated = x.repeat_interleave(repeats, dim=0)
-        z_repeated = z.repeat_interleave(repeats, dim=0)
-
-        # Introduce missing values in the repeated data
-        x_corrupted = self.corrupt_data(x_repeated)
+        
+        # Augment data, and repeat for easier loss computation
+        x_repeated, x_corrupted, z_repeated = self.data_masker.data_augmentation(x, z)
 
         # Re-encode corrupted data
         z_reencoded = self.encoder(x_corrupted)
         z_repeated_mu = z_reencoded.embedding
         z_repeated_sigma = torch.exp(z_reencoded.log_covariance) if self.uses_log_covariance else None
 
-        return x_repeated, z_repeated_mu, z_repeated_sigma
+        # Decode corrupted data
+        recon_x = self.decoder(z_repeated_mu)["reconstruction"]
 
-    def corrupt_data(self, x):
-        """
-        Introduce missing values in the input data with a given probability.
+        # Compute losses
+        recon_loss = self.compute_reconstruction_loss(recon_x, x_repeated, x)
+        reg_loss = self.loss_log_proba(z, z_repeated_mu, z_repeated_sigma)
 
-        Args:
-            x (Tensor): Input data to corrupt.
+        # Combine losses
+        total_loss = recon_loss + self.regularization_weight * reg_loss     
 
-        Returns:
-            Tensor: Corrupted input data.
-        """
-        mask_existing = (x != self.nan_value)
-        corruption_mask = torch.bernoulli(mask_existing * self.missing_value_prob)
-        x_corrupted = x.clone()
-        x_corrupted[corruption_mask == 1] = self.nan_value
-
-        return x_corrupted
+        return total_loss
 
     def compute_reconstruction_loss(self, recon_x, x_repeated, x_original):
         """

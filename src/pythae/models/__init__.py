@@ -42,6 +42,8 @@ from .vae_lin_nf import VAE_LinNF, VAE_LinNF_Config
 from .vamp import VAMP, VAMPConfig
 from .vq_vae import VQVAE, VQVAEConfig
 from .wae_mmd import WAE_MMD, WAE_MMD_Config
+from ._new_models_.vaae import VAAE, VAAEConfig
+
 
 __all__ = [
     "AutoModel",
@@ -99,8 +101,8 @@ __all__ = [
     "PIWAEConfig",
     "HRQVAE",
     "HRQVAEConfig",
+    "VAAE"
 ]
 
-from ._new_models_.vaae import VAAE, VAAE
 
-__all__.append(['VAAE, VAAEConfig'])
+__all__ += ['VAAE, VAAEConfig']
