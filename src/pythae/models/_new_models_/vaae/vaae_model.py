@@ -8,26 +8,28 @@ from ..base import BaseAE
 from ..base.base_utils import ModelOutput
 from ..nn import BaseDecoder, BaseEncoder
 from ..nn.default_architectures import Encoder_AE_MLP
-from .missing_ae_config import vAEConfig
+from .vaae_config import VAAEConfig
+from .vaae_utils import DataMasker, Plotter
+
 from torch import tensor, cat, exp, std
 import torch
 from numpy.random import binomial
 import numpy as np
 
-class vAE(BaseAE):
+class VAAE(BaseAE):
     """
-    Vanilla Autoencoder model with support for handling missing values through data corruption.
+    Variance Aware AutoEncoder model with support for handling missing values through data corruption.
 
     Args:
-        model_config (vAEConfig): Configuration object with model parameters.
+        model_config (VAAEConfig): Configuration object with model parameters.
         encoder (BaseEncoder): Optional encoder instance (inherits from `torch.nn.Module`).
         decoder (BaseDecoder): Optional decoder instance (inherits from `torch.nn.Module`).
     """
 
-    def __init__(self, model_config: vAEConfig, encoder: Optional[BaseEncoder] = None, decoder: Optional[BaseDecoder] = None):
+    def __init__(self, model_config: VAAEConfig, encoder: Optional[BaseEncoder] = None, decoder: Optional[BaseDecoder] = None):
         super().__init__(model_config=model_config, decoder=decoder)
 
-        self.model_name = "vAE"
+        self.model_name = "VAAE"
 
         if encoder is None:
             if model_config.input_dim is None:

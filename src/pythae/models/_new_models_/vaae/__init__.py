@@ -12,7 +12,7 @@ Available samplers
 
 """
 
-from .missing_ae_config import vAEConfig
-from .missing_ae_model import vAE
+from .vaae_config import VAAEConfig
+from .vaae_model import VAAE
 
-__all__ = ["vAE","vAEConfig"]
+__all__ = ["VAAE","VAAEConfig"]

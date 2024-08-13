@@ -4,7 +4,7 @@ from ..base.base_config import BaseAEConfig
 
 
 @dataclass
-class vAEConfig(BaseAEConfig):
+class VAAEConfig(BaseAEConfig):
     """This is the autoencoder model configuration instance deriving from
     :class:`~BaseAEConfig`.
 

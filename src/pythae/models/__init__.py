@@ -100,3 +100,7 @@ __all__ = [
     "HRQVAE",
     "HRQVAEConfig",
 ]
+
+from ._new_models_.vaae import VAAE, VAAE
+
+__all__.append(['VAAE, VAAEConfig'])
